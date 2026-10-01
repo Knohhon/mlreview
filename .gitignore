@@ -27,3 +27,4 @@ mlartifacts/
 
 # Локальные настройки Claude Code
 .claude/settings.local.json
+.claude/state/
