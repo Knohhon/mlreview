@@ -141,7 +141,8 @@ MLReview — это **слой рассуждения поверх истори�
 Нужен Python 3.10+.
 
 ```bash
-pip install -e ".[dev]"
+pip install -r requirements.txt   # полное окружение L0
+pip install -e ".[dev]"           # минимальное: пакет и инструменты разработки
 ruff check . && ruff format --check .
 pytest
 ```

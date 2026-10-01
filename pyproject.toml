@@ -20,15 +20,22 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# Ядро не зависит от фреймворков обучения и трекеров (NFR-01);
-# интеграции подключаются через extras.
-dependencies = []
+# Ядро не зависит от фреймворков обучения и трекеров (NFR-01): здесь только
+# вычислительные библиотеки; интеграции подключаются через extras.
+dependencies = [
+    "numpy>=1.26",    # бутстрап с фиксированным сидом (FR-D01, NFR-05)
+    "scipy>=1.11",    # доверительные интервалы и значимость (FR-D01)
+    "pandas>=2.1",    # контракт прогона, срезы, дубли между сплитами (FR-C02, FR-D02, FR-D03)
+    "pyyaml>=6.0",    # спецификация задачи в YAML (FR-C01)
+    "pydantic>=2.6",  # схема и валидация спецификации и контракта прогона (FR-C01, FR-C02)
+]
 
 [project.optional-dependencies]
 mlflow = ["mlflow>=2.10"]
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    "pre-commit>=3.5",
 ]
 
 [project.scripts]
