@@ -99,6 +99,7 @@ MLReview — это **слой рассуждения поверх истори�
 Документы:
 
 - [`docs/MLReview-analysis.md`](docs/MLReview-analysis.md) — требования и критерии приёмки: уровни, сценарии, требования, метрики качества, бенчмарк, гейты.
+- [`docs/User-cases-MLReview.md`](docs/User-cases-MLReview.md) — пользовательские сценарии по группам P1–P8, сквозные и негативные сценарии, предложения в требования.
 - [`docs/dialogs/dialog_ml_assistant.md`](docs/dialogs/dialog_ml_assistant.md) — исходное обсуждение идеи, аудитории и моделей распространения.
 
 ## Планы
