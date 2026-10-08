@@ -31,6 +31,7 @@ task:
   segments: [language, source, text_length]
 data:
   split_strategy: temporal
+  time_column: created_at
   version: ds-v3
   known_issues: ["шумные метки в source=forum"]
 ```
