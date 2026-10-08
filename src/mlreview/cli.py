@@ -1,4 +1,4 @@
-"""Командная строка: review, metrics, diagnose, ask, spec (FR-R01)."""
+"""Командная строка: review, metrics, diagnose, ask, spec, contract (FR-R01)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from mlreview import __version__
+from mlreview.adapters.mlflow_adapter import MlflowAdapterError, load_mlflow_contract
+from mlreview.core.run_contract import RunContract, RunContractError
 from mlreview.core.task_spec import TaskSpecError, load_task_spec
 
 COMMANDS: dict[str, str] = {
@@ -16,6 +18,7 @@ COMMANDS: dict[str, str] = {
     "diagnose": "диагностика данных, сегментов и кривых обучения",
     "ask": "вопрос по истории проекта и находкам",
     "spec": "работа со спецификацией задачи",
+    "contract": "проверка контракта прогона из трекера",
 }
 
 
@@ -39,8 +42,58 @@ def _run_spec(args: argparse.Namespace) -> int:
     return 0
 
 
-HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {"spec": _run_spec}
-ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {"spec": _add_spec_actions}
+def _add_contract_actions(parser: argparse.ArgumentParser) -> None:
+    actions = parser.add_subparsers(dest="contract_action", metavar="<действие>", required=True)
+    check_help = "собрать контракт прогона из MLflow и проверить его (FR-C02, FR-C03)"
+    check = actions.add_parser("check", help=check_help, description=check_help)
+    check.add_argument("run_id", help="id прогона MLflow")
+    check.add_argument(
+        "--spec", type=Path, required=True, help="путь к YAML-файлу спецификации задачи"
+    )
+    check.add_argument(
+        "--tracking-uri", help="адрес трекера MLflow; по умолчанию — MLFLOW_TRACKING_URI"
+    )
+
+
+def _contract_summary(contract: RunContract) -> list[str]:
+    examples = contract.examples
+    if examples is None:
+        examples_line = "примеров: нет"
+    else:
+        splits = ", ".join(sorted(examples["split"].unique()))
+        examples_line = f"примеров: {len(examples)}, сплиты: {splits}"
+    curves = 0 if contract.curves is None else contract.curves["name"].nunique()
+    lines = [
+        f"контракт прогона валиден: {contract.run_id}",
+        f"  предсказаний: {len(contract.predictions)}",
+        f"  {examples_line}",
+        f"  кривых: {curves}",
+        f"  параметров: {len(contract.config)}",
+        f"  версия данных: {contract.data_version or 'нет'}",
+    ]
+    lines += [f"  нет {gap.field} — недоступно: {gap.purpose}" for gap in contract.gaps]
+    return lines
+
+
+def _run_contract(args: argparse.Namespace) -> int:
+    try:
+        spec = load_task_spec(args.spec)
+        contract = load_mlflow_contract(spec, args.run_id, tracking_uri=args.tracking_uri)
+    except (TaskSpecError, RunContractError, MlflowAdapterError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print("\n".join(_contract_summary(contract)))
+    return 0
+
+
+HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
+    "spec": _run_spec,
+    "contract": _run_contract,
+}
+ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
+    "spec": _add_spec_actions,
+    "contract": _add_contract_actions,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:

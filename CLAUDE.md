@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MLReview — open-source ассистент-критик для ML-экспериментов. Требования (с идентификаторами FR-*/NFR-*), критерии приёмки и этапы разработки описаны в `docs/MLReview-analysis.md` — это основной источник контекста о проекте. Пользовательские сценарии — в `docs/User-cases-MLReview.md`.
 
-Статус: этап 1 (L0). Реализованы спецификация задачи FR-C01 (`src/mlreview/core/task_spec.py`, спецификация — `docs/specs/task-spec.md`) с командой `mlreview spec validate <путь>` и контракт прогона FR-C02 (`src/mlreview/core/run_contract.py`, спецификация — `docs/specs/run-contract.md`): `build_run_contract(spec, run_id=…, predictions=…, …)` проверяет таблицы pandas против спецификации задачи и отдаёт `gaps` — недостающие поля и что из-за них не проверится (X1). Команды CLI для контракта нет — она появится с адаптером MLflow (FR-C03, следующий шаг). Подкоманды `review`, `metrics`, `diagnose`, `ask` пока заглушки, возвращают код 1 с сообщением «не реализована» — `tests/test_cli.py` это проверяет, при реализации команды её нужно убрать из списка заглушек в тесте. Первые целевые задачи — классификация и регрессия на табличных данных (линейные модели), первый трекер — MLflow.
+Статус: этап 1 (L0). Реализованы спецификация задачи FR-C01 (`src/mlreview/core/task_spec.py`, спецификация — `docs/specs/task-spec.md`) с командой `mlreview spec validate <путь>` и контракт прогона FR-C02 (`src/mlreview/core/run_contract.py`, спецификация — `docs/specs/run-contract.md`): `build_run_contract(spec, run_id=…, predictions=…, …)` проверяет таблицы pandas против спецификации задачи и отдаёт `gaps` — недостающие поля и что из-за них не проверится (X1). Адаптер MLflow FR-C03 (`src/mlreview/adapters/mlflow_adapter.py`, спецификация — `docs/specs/mlflow-adapter.md`) собирает контракт из прогона: таблицы — артефакты `mlreview/<таблица>.parquet|csv`, конфиг — параметры, кривые — история метрик, версия данных — тег `mlreview.data_version`; `log_contract_artifacts` пишет их из скрипта обучения; `mlflow` импортируется лениво (без extra — ошибка с подсказкой установки). Команда — `mlreview contract check <run_id> --spec <путь> [--tracking-uri <адрес>]`. Ручная проверка с настоящим `mlflow server` и скриптом sklearn — `docs/manual-testing/mlflow-adapter.md`; после изменений адаптера пройти её и дописать строку в журнал в конце файла. Следующий шаг L0 — анализаторы FR-D01–D03. Подкоманды `review`, `metrics`, `diagnose`, `ask` пока заглушки, возвращают код 1 с сообщением «не реализована» — `tests/test_cli.py` это проверяет, при реализации команды её нужно убрать из списка заглушек в тесте. Первые целевые задачи — классификация и регрессия на табличных данных (линейные модели), первый трекер — MLflow.
 
 ## Команды
 
 ```bash
 pip install -r requirements.txt         # окружение L0: пакет с extras mlflow и dev + scikit-learn для бенчмарка
-pip install -e ".[dev]"                 # минимальная установка: пакет и dev-инструменты (Python 3.10+)
+pip install -e ".[dev]"                 # минимальная установка: пакет и dev-инструменты (Python 3.10+); тесты адаптера MLflow пропускаются
 ruff check .                            # линтер
 ruff format .                           # форматирование
 pytest                                  # все тесты
@@ -20,7 +20,7 @@ pytest tests/test_cli.py::test_version  # один тест
 python -m mlreview --help               # запуск CLI (или `mlreview`)
 ```
 
-Перед коммитом `ruff check .`, `ruff format --check .` и `pytest` должны проходить (скилл `check`). CI (`.github/workflows/ci.yml`) запускает то же самое, тесты — на Python 3.10–3.13, поэтому синтаксис должен быть совместим с 3.10. Настройки ruff — в `pyproject.toml` (`[tool.ruff]`), длина строки 100. Версия пакета задаётся в `src/mlreview/__init__.py` (hatch читает её оттуда).
+Перед коммитом `ruff check .`, `ruff format --check .` и `pytest` должны проходить (скилл `check`). CI (`.github/workflows/ci.yml`) запускает то же самое (ставит `.[dev,mlflow]`, чтобы адаптер проверялся), тесты — на Python 3.10–3.13, поэтому синтаксис должен быть совместим с 3.10. Настройки ruff — в `pyproject.toml` (`[tool.ruff]`), длина строки 100. Версия пакета задаётся в `src/mlreview/__init__.py` (hatch читает её оттуда).
 
 ## Порядок разработки (обязательный)
 
@@ -39,7 +39,7 @@ python -m mlreview --help               # запуск CLI (или `mlreview`)
 - в конце хода и сессии — сохранение диалога в `docs/dialogs/claude-<дата>-<сессия>.md`;
 - перед командами Bash — блокировка чтения `docs/dialogs/`.
 
-Тестовые стражи (`docs/specs/invariant-guards.md`): `tests/test_architecture.py` падает, если код вне `src/mlreview/adapters/` импортирует фреймворк обучения или трекер; `tests/conftest.py` блокирует сеть во всех тестах.
+Тестовые стражи (`docs/specs/invariant-guards.md`): `tests/test_architecture.py` падает, если код вне `src/mlreview/adapters/` импортирует фреймворк обучения или трекер; `tests/conftest.py` блокирует сеть во всех тестах. Там же фикстура `mlflow_store` — локальный sqlite-трекер MLflow во временном каталоге (без пакета mlflow тест пропускается).
 
 ## Архитектура
 
