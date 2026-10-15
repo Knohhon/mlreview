@@ -8,14 +8,14 @@
 | --- | --- |
 | `review(run, spec, baseline=None, seeds=[], baseline_seeds=[], groups=[], min_severity="info", limit=0, store=True, tracking_uri=None, hypotheses=False, focus=None)` | `review`, `diagnose <группа>` (через `groups`) |
 | `contract_check(run, spec, tracking_uri=None)` | `contract check` |
-| `metrics_recommend(spec, answers={}, run=None)` | `metrics init` (без записи в файл) |
-| `metrics_test(run, spec)` | `metrics test` |
+| `metrics_recommend(spec, answers={}, run=None, tracking_uri=None)` | `metrics init` (без записи в файл) |
+| `metrics_test(run, spec, tracking_uri=None)` | `metrics test` |
 | `findings_list(status=None, min_severity="low", check=None)` | `findings list` |
 | `finding_show(finding_id)` | `findings show` |
 | `finding_set_status(finding_id, status, reason=None)` | `findings accept/fix/reopen`, `dismiss` |
 | `journal_add(kind, text, runs=[], findings=[], hypothesis=None, outcome=None, data_version=None)` | `journal add` |
 | `journal_search(query, spec=None)` | `journal search` |
-| `ask(question, spec=None, run=None, baseline=None)` | `ask` |
+| `ask(question, spec=None, run=None, baseline=None, tracking_uri=None)` | `ask` |
 
 Примеры (`--example`) через MCP не отправляются: в LLM уходят только агрегаты (NFR-04).
 

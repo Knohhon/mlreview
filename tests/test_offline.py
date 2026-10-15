@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import os
 import socket
+from pathlib import Path
 
 import pytest
 
@@ -36,3 +38,9 @@ def test_unix_sockets_are_allowed():
     with left, right:
         left.sendall(b"ok")
         assert right.recv(2) == b"ok"
+
+
+def test_tests_are_isolated_from_developer_workspace(tmp_path):
+    """B5: текущий каталог — временный каталог теста, MLREVIEW_HOME не задан."""
+    assert Path.cwd() == tmp_path
+    assert "MLREVIEW_HOME" not in os.environ

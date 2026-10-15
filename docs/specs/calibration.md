@@ -14,7 +14,7 @@ Expected calibration error, 10 корзин равной ширины на [0, 1
 | --- | --- | --- |
 | `calibration.ece` | без базового прогона: ECE ≥ 0,1 — medium, ECE ≥ 0,05 — low | medium / low |
 | `calibration.ece_delta` | с базовым прогоном: CI дельты ECE выше 0 — medium «калибровка ухудшилась»; ниже 0 — info «калибровка улучшилась» | medium / info |
-| `comparison.disagreement` | с базовым прогоном, классификация: предсказанные классы различаются (порог 0,5 для бинарных вероятностей, argmax для multiclass) | info |
+| `comparison.disagreement` | с базовым прогоном, классификация: предсказанные классы различаются (класс 1 при вероятности > 0,5 — как `predict` у scikit-learn; argmax для multiclass) | info |
 
 ## Ожидаемое поведение
 

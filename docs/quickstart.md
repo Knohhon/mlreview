@@ -5,11 +5,12 @@
 ## 1. Установка
 
 ```bash
-pip install "mlreview[mlflow,mcp]"   # из исходников: pip install -e ".[mlflow,mcp]"
+git clone https://github.com/Knohhon/mlreview.git && cd mlreview
+pip install -e ".[mlflow,mcp]"
 mlreview --version
 ```
 
-Extra `mlflow` нужен для прогонов из MLflow, `mcp` — для MCP-сервера. Для прогонов в файлах достаточно `pip install mlreview`.
+Extra `mlflow` нужен для прогонов из MLflow, `mcp` — для MCP-сервера. Для прогонов в файлах extras не нужны: `pip install -e .`. После публикации на PyPI — `pip install "mlreview[mlflow,mcp]"`.
 
 ## 2. Рабочее пространство проекта
 
