@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 
+from mlreview.adapters.errors import AdapterError
 from mlreview.core.run_contract import RunContract, build_run_contract
 from mlreview.core.task_spec import TaskSpec
 
@@ -23,7 +24,7 @@ TABLE_FORMATS = ("parquet", "csv")
 INSTALL_HINT = 'pip install "mlreview[mlflow]"'
 
 
-class MlflowAdapterError(RuntimeError):
+class MlflowAdapterError(AdapterError):
     """Прогон MLflow не прочитан или не записан; сообщение объясняет причину."""
 
 

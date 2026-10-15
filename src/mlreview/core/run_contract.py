@@ -2,12 +2,13 @@
 
 Контракт — всё, что ядро знает о прогоне: модель и фреймворк остаются за адаптером (NFR-01).
 Формат предсказаний определяется спецификацией задачи (FR-C01). Поведение зафиксировано
-в `docs/specs/run-contract.md`.
+в `docs/specs/run-contract.md`; хеш данных (FR-C04) — в `docs/specs/data-version.md`.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -73,6 +74,7 @@ class RunContract:
     curves: pd.DataFrame | None
     data_version: str | None
     gaps: list[ContractGap]
+    data_hash: str = ""
 
 
 def _evidence(labels: pd.Series | pd.Index, noun: str = "id") -> str:
@@ -339,6 +341,58 @@ def _gaps(
     return gaps
 
 
+def _canonical(values: pd.Series) -> list[str]:
+    """Значения колонки как строки, не зависящие от формата файла и версии pandas."""
+    if pd.api.types.is_bool_dtype(values):
+        return ["" if pd.isna(value) else str(bool(value)) for value in values]
+    if pd.api.types.is_numeric_dtype(values):
+        numbers = values.astype(float).to_numpy()
+        return ["" if np.isnan(x) else format(x, ".17g") for x in numbers]
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return ["" if pd.isna(value) else value.isoformat() for value in values]
+    result = []
+    for value in values:
+        if (
+            value is None
+            or value is pd.NA
+            or value is pd.NaT
+            or (isinstance(value, float) and np.isnan(value))
+        ):
+            result.append("")
+        elif isinstance(value, bool | np.bool_):
+            result.append(str(bool(value)))
+        elif isinstance(value, int | float | np.number):
+            result.append(format(float(value), ".17g"))
+        elif isinstance(value, pd.Timestamp):
+            result.append(value.isoformat())
+        else:
+            result.append(str(value))
+    return result
+
+
+def _hash_table(digest: Any, name: str, frame: pd.DataFrame) -> None:
+    frame = frame.assign(example_id=frame["example_id"].astype(str))
+    frame = frame.sort_values("example_id", kind="mergesort")
+    columns = sorted(frame.columns, key=str)
+    digest.update(f"{name}\x1e{len(frame)}\x1e".encode())
+    for column in columns:
+        digest.update(f"{column}\x1f".encode())
+        digest.update("\x1f".join(_canonical(frame[column])).encode())
+        digest.update(b"\x1e")
+
+
+def dataset_hash(predictions: pd.DataFrame, examples: pd.DataFrame | None) -> str:
+    """Отпечаток данных прогона: examples и метки predictions (FR-C04).
+
+    Не зависит от порядка строк и колонок и от того, записано ли число как `1` или `1.0`.
+    """
+    digest = hashlib.sha256()
+    if examples is not None:
+        _hash_table(digest, "examples", examples)
+    _hash_table(digest, "labels", predictions[["example_id", "label"]])
+    return f"sha256:{digest.hexdigest()[:16]}"
+
+
 def _copy_table(frame: pd.DataFrame | None) -> pd.DataFrame | None:
     return None if frame is None else frame.reset_index(drop=True).copy(deep=True)
 
@@ -382,12 +436,14 @@ def build_run_contract(  # noqa: PLR0913 — поля контракта пер�
     config = copy.deepcopy(dict(config or {}))
     examples = _copy_table(examples)
     curves = _copy_table(curves)
+    predictions = _copy_table(predictions)
     return RunContract(
         run_id=run_id,
-        predictions=_copy_table(predictions),
+        predictions=predictions,
         examples=examples,
         config=config,
         curves=curves,
         data_version=data_version,
         gaps=_gaps(spec, examples, curves, config, data_version),
+        data_hash=dataset_hash(predictions, examples),
     )

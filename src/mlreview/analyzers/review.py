@@ -58,4 +58,6 @@ def review(
         data_version=contract.data_version,
         baseline_data_version=None if baseline is None else baseline.data_version,
         compared_examples=None if baseline is None else _common_examples(contract, baseline),
+        data_hash=contract.data_hash,
+        baseline_data_hash=None if baseline is None else baseline.data_hash,
     )

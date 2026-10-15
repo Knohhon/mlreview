@@ -28,3 +28,6 @@ mlartifacts/
 # Локальные настройки Claude Code
 .claude/settings.local.json
 .claude/state/
+
+# Рабочее пространство MLReview
+.mlreview/
