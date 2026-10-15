@@ -92,8 +92,7 @@ def test_ask_without_llm_is_not_an_error():
     assert "N-0001" in "\n".join(result["journal_search"])
 
 
-@pytest.mark.usefixtures("project")
-def test_protocol_roundtrip():
+def test_protocol_roundtrip(project):
     """B1, B3, B4: клиент MCP в процессе — список, вызов, ошибка с сообщением."""
     pytest.importorskip("mcp")
     import anyio  # noqa: PLC0415 — зависимость mcp
@@ -108,15 +107,17 @@ def test_protocol_roundtrip():
             ok = await client.call_tool(
                 "review", {"run": "run-0", "spec": "task.yaml", "store": False}
             )
-            bad = await client.call_tool("review", {"run": "nope", "spec": "task.yaml"})
+            bad = await client.call_tool("review", {"run": "empty-run", "spec": "task.yaml"})
             return names, ok, bad
 
+    (project / "empty-run").mkdir()  # каталог без предсказаний — ошибка адаптера файлов
     names, ok, bad = anyio.run(scenario)
     assert names == EXPECTED
     assert not ok.is_error
     assert '"run_id": "run-0"' in ok.content[0].text
     assert bad.is_error
-    assert "nope" in bad.content[0].text
+    assert "empty-run" in bad.content[0].text
+    assert "predictions.parquet" in bad.content[0].text
 
 
 def test_missing_extra(monkeypatch, capsys):
