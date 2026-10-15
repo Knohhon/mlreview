@@ -1,5 +1,7 @@
 """Прогон бенчмарка: ревью каждой версии проекта, recall дефектов (Q1) и ложные critical (Q2).
 
+`--perf` — замер производительности ревью на синтетическом прогоне (NFR-06).
+
 Спецификация — `docs/specs/benchmark.md`.
 """
 
@@ -10,18 +12,27 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from benchmark.perf import DEFAULT_N, measure
 from benchmark.projects import PROJECTS as PROJECT_DEFINITIONS
-from benchmark.projects import VERSIONS, Project, build_runs
-from mlreview.analyzers.evaluation import is_worse, prepare, primary_metric
+from benchmark.projects import Project, build_runs, versions_for
+from mlreview.analyzers.evaluation import is_worse, prepare
 from mlreview.analyzers.review import review
 from mlreview.core.findings import Finding, Report
+from mlreview.metrics.library import primary
 
 PROJECTS = tuple(PROJECT_DEFINITIONS)
-GATE_RECALL = 0.5
-GATE_FALSE_CRITICAL = 3
+GATE_RECALL = 0.7  # гейт L1 (L0 — 0,5)
+GATE_FALSE_CRITICAL = 1  # гейт L1 (L0 — 3)
 INSTALL_HINT = "бенчмарку нужен scikit-learn: pip install -r requirements.txt"
+FOUND_BY: dict[str, tuple[str, str | tuple[str, ...] | None]] = {
+    "B01": ("data.split_duplicates", "critical"),
+    "B02": ("data.temporal_leak", "critical"),
+    "B07": ("process.data_version_mismatch", None),
+    "B08": ("seeds.within_noise", ("high", "medium")),
+    "B11": ("process.multiple_changes", None),
+}
 
-__all__ = ["PROJECTS", "VERSIONS", "BenchmarkResult", "VersionResult", "main", "run_benchmark"]
+__all__ = ["PROJECTS", "BenchmarkResult", "VersionResult", "main", "run_benchmark"]
 
 
 @dataclass(frozen=True)
@@ -65,14 +76,29 @@ def _is_found(project: Project, version: str, findings: list[Finding]) -> bool |
             and f.facts["value"] == project.corrupted_value
             for f in findings
         )
-    check = {"B01": "data.split_duplicates", "B02": "data.temporal_leak"}[version]
-    return any(f.check == check and f.severity == "critical" for f in findings)
+    if version == "B03":
+        return any(
+            f.check == "data.strong_feature" and f.facts["feature"] == "leak" for f in findings
+        )
+    if version == "B05":
+        return any(
+            f.check == "metrics.unsuitable" and f.facts["metric"] == "accuracy" for f in findings
+        )
+    check, severity = FOUND_BY[version]
+    allowed = (severity,) if isinstance(severity, str) else severity
+    return any(f.check == check and (allowed is None or f.severity in allowed) for f in findings)
 
 
 def run_version(project: Project, version: str) -> VersionResult:
     runs = build_runs(project, version)
-    report = review(runs.spec, runs.candidate, runs.baseline)
-    metric = primary_metric(runs.spec.task)
+    report = review(
+        runs.spec,
+        runs.candidate,
+        runs.baseline,
+        candidate_seeds=runs.candidate_seeds,
+        baseline_seeds=runs.baseline_seeds,
+    )
+    metric = primary(runs.spec)
     delta = metric(prepare(runs.spec.task, runs.candidate.predictions)) - metric(
         prepare(runs.spec.task, runs.baseline.predictions)
     )
@@ -93,7 +119,7 @@ def run_benchmark(projects: Sequence[str] = PROJECTS) -> BenchmarkResult:
         [
             run_version(PROJECT_DEFINITIONS[name], version)
             for name in projects
-            for version in VERSIONS
+            for version in versions_for(name)
         ]
     )
 
@@ -109,7 +135,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--project", action="append", choices=PROJECTS, help="проект (можно несколько)"
     )
+    parser.add_argument("--perf", action="store_true", help="замер производительности (NFR-06)")
+    parser.add_argument("--n", type=int, default=DEFAULT_N, help="примеров test в замере")
     args = parser.parse_args(argv)
+    if args.perf:
+        result = measure(args.n)
+        print(result.describe())
+        return 0 if result.passed else 1
     try:
         import sklearn  # noqa: F401, PLC0415 — проверка зависимости бенчмарка
     except ImportError:
@@ -126,6 +158,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     gate = "пройден" if result.passed else "НЕ пройден"
     print(
         f"Q1 (recall дефектов): {result.recall:.0%} ({found}/{len(defects)}) · "
-        f"Q2 (critical на чистый проект): {result.false_critical:.1f} · гейт L0: {gate}"
+        f"Q2 (critical на чистый проект): {result.false_critical:.1f} · гейт L1: {gate}"
     )
     return 0 if result.passed else 1

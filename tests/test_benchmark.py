@@ -1,4 +1,4 @@
-"""Приёмочный бенчмарк L0: дефекты B01, B02, B12; метрики Q1, Q2.
+"""Приёмочный бенчмарк L0–L1: дефекты B01–B12; метрики Q1, Q2; NFR-06.
 
 Спецификация: docs/specs/benchmark.md.
 """
@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import sys
 
+import numpy as np
 import pytest
 
-from benchmark.projects import clear_cache
-from benchmark.run import PROJECTS, VERSIONS, main, run_benchmark
+from benchmark.perf import measure
+from benchmark.projects import clear_cache, versions_for
+from benchmark.run import PROJECTS, main, run_benchmark
+from mlreview.analyzers.evaluation import METRICS, Outputs, auc_sampler
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +25,8 @@ def results():
 def test_every_version_evaluated(results):
     """B1: все проекты и версии; Q1 и Q2 считаются по версиям."""
     seen = [(v.project, v.version) for v in results.versions]
-    assert seen == [(project, version) for project in PROJECTS for version in VERSIONS]
+    assert seen == [(project, version) for project in PROJECTS for version in versions_for(project)]
+    assert len([v for v in results.versions if v.version != "clean"]) == 21
 
     defects = [v for v in results.versions if v.version != "clean"]
     clean = [v for v in results.versions if v.version == "clean"]
@@ -31,8 +35,8 @@ def test_every_version_evaluated(results):
     assert results.false_critical == sum(v.critical for v in clean) / len(clean)
 
 
-def test_l0_gate_and_target(results):
-    """B2: гейт L0 (Q1 ≥ 50%, Q2 ≤ 3) пройден; на текущем наборе — все дефекты, 0 critical."""
+def test_l1_gate_and_target(results):
+    """B2: гейт L1 (Q1 ≥ 70%, Q2 ≤ 1) пройден; на текущем наборе — все дефекты, 0 critical."""
     assert results.passed
     missed = [(v.project, v.version) for v in results.versions if v.found is False]
     assert missed == []
@@ -75,3 +79,25 @@ def test_main_without_sklearn(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "sklearn", None)
     assert main([]) == 1
     assert "pip install -r requirements.txt" in capsys.readouterr().err
+
+
+def test_fast_bootstrap_auc_matches_resampled_auc():
+    """B6: быстрый бутстрап ROC AUC равен ROC AUC на выборке с повторами."""
+    rng = np.random.default_rng(0)
+    n = 500
+    labels = rng.integers(0, 2, n)
+    scores = np.round(rng.uniform(0, 1, n), 2)  # много равных оценок
+    outputs = Outputs(np.arange(n).astype(str), labels, scores)
+    fast = auc_sampler(outputs)
+    for _ in range(20):
+        index = rng.integers(0, n, n)
+        assert fast(index) == pytest.approx(METRICS["roc_auc"](outputs.take(index)), abs=1e-12)
+
+
+def test_perf_measure_reports_times():
+    """B6: замер производительности — время контрактов и ревью, число находок."""
+    result = measure(2000)
+    assert result.n == 2000
+    assert result.review_seconds > 0
+    assert result.findings > 0
+    assert result.passed

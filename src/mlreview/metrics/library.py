@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from mlreview.analyzers.evaluation import METRICS, Metric, Outputs, metric_names
+from mlreview.analyzers.evaluation import METRICS, Metric, Outputs, auc_sampler, metric_names
 from mlreview.core.task_spec import CustomMetric, TaskSection, TaskSpec
 from mlreview.metrics import kernels
 from mlreview.metrics.catalog import CATALOG, MetricInfo, param_value, parse_name
@@ -74,7 +74,8 @@ def _catalog_metric(name: str, task: TaskSection, threshold: float) -> Metric:
             return float(kernel(outputs.labels, values))
         return float(kernel(outputs.labels, values, param))
 
-    return Metric(name, fn, info.higher_is_better, "не определена на этих примерах")
+    sampler = auc_sampler if base == "roc_auc" else None
+    return Metric(name, fn, info.higher_is_better, "не определена на этих примерах", sampler)
 
 
 _LOADED: dict[str, Callable[..., Any]] = {}

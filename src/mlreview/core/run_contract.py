@@ -341,16 +341,21 @@ def _gaps(
     return gaps
 
 
-def _canonical(values: pd.Series) -> list[str]:
-    """Значения колонки как строки, не зависящие от формата файла и версии pandas."""
-    if pd.api.types.is_bool_dtype(values):
-        return ["" if pd.isna(value) else str(bool(value)) for value in values]
-    if pd.api.types.is_numeric_dtype(values):
-        numbers = values.astype(float).to_numpy()
-        return ["" if np.isnan(x) else format(x, ".17g") for x in numbers]
+def _column_bytes(values: pd.Series) -> bytes:
+    """Значения колонки в байтах, не зависящих от формата файла и версии pandas (FR-C04).
+
+    Числа — float64 (`1` и `1.0`, `-0.0` и `0.0` совпадают, все NaN — один NaN), даты —
+    наносекунды UTC, остальное — строки; пропуски — пустая строка.
+    """
+    if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
+        numbers = values.astype(float).to_numpy() + 0.0
+        numbers = np.where(np.isnan(numbers), np.nan, numbers)
+        return b"n" + numbers.astype("<f8").tobytes()
     if pd.api.types.is_datetime64_any_dtype(values):
-        return ["" if pd.isna(value) else value.isoformat() for value in values]
-    result = []
+        stamps = pd.to_datetime(values, utc=True).astype("datetime64[ns, UTC]")
+        nanos = stamps.dt.tz_localize(None).to_numpy().astype("datetime64[ns]").astype("<i8")
+        return b"t" + nanos.tobytes()
+    texts = []
     for value in values:
         if (
             value is None
@@ -358,16 +363,16 @@ def _canonical(values: pd.Series) -> list[str]:
             or value is pd.NaT
             or (isinstance(value, float) and np.isnan(value))
         ):
-            result.append("")
+            texts.append("")
         elif isinstance(value, bool | np.bool_):
-            result.append(str(bool(value)))
+            texts.append(str(bool(value)))
         elif isinstance(value, int | float | np.number):
-            result.append(format(float(value), ".17g"))
+            texts.append(format(float(value), ".17g"))
         elif isinstance(value, pd.Timestamp):
-            result.append(value.isoformat())
+            texts.append(value.isoformat())
         else:
-            result.append(str(value))
-    return result
+            texts.append(str(value))
+    return b"s" + "\x1f".join(texts).encode()
 
 
 def _hash_table(digest: Any, name: str, frame: pd.DataFrame) -> None:
@@ -377,7 +382,7 @@ def _hash_table(digest: Any, name: str, frame: pd.DataFrame) -> None:
     digest.update(f"{name}\x1e{len(frame)}\x1e".encode())
     for column in columns:
         digest.update(f"{column}\x1f".encode())
-        digest.update("\x1f".join(_canonical(frame[column])).encode())
+        digest.update(_column_bytes(frame[column]))
         digest.update(b"\x1e")
 
 

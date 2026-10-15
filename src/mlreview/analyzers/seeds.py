@@ -1,7 +1,7 @@
 """Разброс по сидам и «улучшение в пределах шума» (FR-D05, B08).
 
-Метрика — основная метрика задачи по всем предсказаниям каждого прогона; значимость —
-t-тест Уэлча. Поведение зафиксировано в `docs/specs/seeds.md`.
+Метрики — все метрики задачи по всем предсказаниям каждого прогона, по находке на метрику;
+значимость — t-тест Уэлча. Поведение зафиксировано в `docs/specs/seeds.md`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from mlreview.analyzers.evaluation import Metric, is_worse, prepare, rounded
 from mlreview.core.findings import CheckResults, Finding
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
-from mlreview.metrics.library import primary
+from mlreview.metrics.library import SpecMetric, spec_metrics
 
 ALPHA = 0.05
 POWER = 0.8
@@ -95,7 +95,9 @@ def _not_evaluated(n_candidate: int, n_baseline: int) -> Finding:
     return Finding("seeds.not_evaluated", "low", message, REQUIREMENT, (), facts, suggestion)
 
 
-def _comparison(metric: Metric, candidate: np.ndarray, baseline: np.ndarray) -> Finding:
+def _comparison(
+    metric: Metric, candidate: np.ndarray, baseline: np.ndarray, *, primary: bool
+) -> Finding:
     c_mean, b_mean = float(candidate.mean()), float(baseline.mean())
     c_std, b_std = float(candidate.std(ddof=1)), float(baseline.std(ddof=1))
     delta = c_mean - b_mean
@@ -120,6 +122,7 @@ def _comparison(metric: Metric, candidate: np.ndarray, baseline: np.ndarray) -> 
     }
     worse = is_worse(metric, delta)
     significant = p_value < ALPHA
+    important = "high" if primary else "medium"
     n_text = f"{len(candidate)} и {len(baseline)} {plural(len(baseline), 'сид', 'сида', 'сидов')}"
     body = (
         f"{metric.name} {facts['baseline_mean']:.3f} → {facts['candidate_mean']:.3f}"
@@ -127,22 +130,22 @@ def _comparison(metric: Metric, candidate: np.ndarray, baseline: np.ndarray) -> 
         f" p = {facts['p_value']:.2f} (Уэлч, {n_text})"
     )
     suggestion = None
-    if significant:
+    if delta == 0:
+        check, severity, message = "seeds.within_noise", "info", f"разницы по сидам нет: {body}"
+    elif significant:
         check = "seeds.significant"
-        severity, head = ("high", "ухудшение") if worse else ("info", "улучшение")
+        severity, head = (important, "ухудшение") if worse else ("info", "улучшение")
         message = f"{head} устойчиво по сидам: {body}"
         suggestion = DECLINE_SUGGESTION if worse else None
     else:
         check = "seeds.within_noise"
-        severity, head = ("info", "ухудшение") if worse or delta == 0 else ("high", "улучшение")
+        severity, head = ("info", "ухудшение") if worse else (important, "улучшение")
         tail = (
             f"для эффекта такого размера нужно ≈ {needed}"
             f" {plural(needed, 'сид', 'сида', 'сидов')} на конфигурацию"
-            if needed
-            else "разницы нет"
         )
         message = f"{head} в пределах шума по сидам: {body}; {tail}"
-        if severity == "high":
+        if not worse:
             suggestion = (
                 f"не считать улучшение доказанным: повторить обе конфигурации на {needed} сидах"
                 " или искать больший эффект; различающий эксперимент — сравнить конфигурации"
@@ -151,22 +154,38 @@ def _comparison(metric: Metric, candidate: np.ndarray, baseline: np.ndarray) -> 
     return Finding(check, severity, message, f"{REQUIREMENT}, B08", (), facts, suggestion)
 
 
-def _spread_results(metric: Metric, spec: TaskSpec, runs: Sequence[RunContract]) -> CheckResults:
+def _spread_results(spec: TaskSpec, runs: Sequence[RunContract]) -> CheckResults:
     results = CheckResults()
     if len(runs) < 2:  # noqa: PLR2004 — разброс считается хотя бы по двум сидам
         results.skip("seeds.spread", "один прогон — разброс по сидам не оценён")
         return results
-    values, reason = _values(metric, spec, runs)
-    reason = _different_data(runs) or reason
+    reason = _different_data(runs)
     if reason:
         results.skip("seeds.spread", reason)
-    else:
-        results.findings.append(_spread(metric, values))
+        return results
+    for item in spec_metrics(spec):
+        values, undefined = _values(item.metric, spec, runs)
+        if undefined:
+            results.skip("seeds.spread", undefined)
+        else:
+            results.findings.append(_spread(item.metric, values))
     return results
 
 
+def _compare_metric(
+    spec: TaskSpec,
+    item: SpecMetric,
+    candidates: Sequence[RunContract],
+    baselines: Sequence[RunContract],
+) -> Finding | str:
+    candidate, undefined = _values(item.metric, spec, candidates)
+    baseline, undefined_base = _values(item.metric, spec, baselines)
+    if undefined or undefined_base:
+        return undefined or undefined_base
+    return _comparison(item.metric, candidate, baseline, primary=item.role == "primary")
+
+
 def _comparison_results(
-    metric: Metric,
     spec: TaskSpec,
     candidates: Sequence[RunContract],
     baselines: Sequence[RunContract],
@@ -175,13 +194,16 @@ def _comparison_results(
     if len(candidates) < 2 or len(baselines) < 2:  # noqa: PLR2004
         results.findings.append(_not_evaluated(len(candidates), len(baselines)))
         return results
-    candidate, undefined = _values(metric, spec, candidates)
-    baseline, undefined_base = _values(metric, spec, baselines)
-    reason = _different_data([*candidates, *baselines]) or undefined or undefined_base
+    reason = _different_data([*candidates, *baselines])
     if reason:
         results.skip("seeds.within_noise", reason)
-    else:
-        results.findings.append(_comparison(metric, candidate, baseline))
+        return results
+    for item in spec_metrics(spec):
+        outcome = _compare_metric(spec, item, candidates, baselines)
+        if isinstance(outcome, str):
+            results.skip("seeds.within_noise", outcome)
+        else:
+            results.findings.append(outcome)
     return results
 
 
@@ -191,7 +213,6 @@ def seed_findings(
     baselines: Sequence[RunContract] | None,
 ) -> CheckResults:
     """Разброс по сидам кандидата и (с базовым прогоном) значимость разницы конфигураций."""
-    metric = primary(spec)
     if not baselines:
-        return _spread_results(metric, spec, candidates)
-    return _comparison_results(metric, spec, candidates, baselines)
+        return _spread_results(spec, candidates)
+    return _comparison_results(spec, candidates, baselines)

@@ -13,7 +13,7 @@ from mlreview.analyzers.seeds import seed_findings
 from mlreview.core.run_contract import build_run_contract
 from mlreview.core.task_spec import parse_task_spec
 
-SPEC = parse_task_spec("task: {type: regression, output: values}\n")
+SPEC = parse_task_spec("task: {type: regression, output: values}\nmetrics: {primary: mae}\n")
 N = 200
 
 
@@ -129,7 +129,7 @@ def test_seeds_on_different_data_are_skipped():
 
 
 def test_undefined_metric_is_skipped():
-    """E3: метрика не определена на сиде (один класс в метках)."""
+    """E3: метрика не определена на сиде (один класс) — пропуск только для неё."""
     spec = parse_task_spec("task: {type: classification/binary, output: probabilities}\n")
 
     def run(run_id, shift):
@@ -143,5 +143,22 @@ def test_undefined_metric_is_skipped():
         return build_run_contract(spec, run_id=run_id, predictions=predictions)
 
     results = seed_findings(spec, [run("c1", 0), run("c2", 0.1)], [run("b1", 0), run("b2", 0.2)])
-    assert results.findings == []
     assert "roc_auc не определена на прогоне c1" in results.skipped[0].reason
+    assert {f.facts["metric"] for f in results.findings} == {"log_loss", "brier"}
+
+
+def test_every_task_metric_is_checked():
+    """B6: по находке на метрику; дополнительная — medium; нулевая разница — info."""
+    spec = parse_task_spec(
+        "task: {type: regression, output: values}\nmetrics: {primary: mae, secondary: [rmse]}\n"
+    )
+    results = seed_findings(spec, _side("c", [0.98, 1.08, 0.88]), _side("b", [1.0, 1.1, 0.9]))
+    by_metric = {f.facts["metric"]: (f.check, f.severity) for f in results.findings}
+    assert by_metric == {
+        "mae": ("seeds.within_noise", "high"),
+        "rmse": ("seeds.within_noise", "medium"),
+    }
+    same = seed_findings(spec, _side("c", [1.0, 1.1, 0.9]), _side("b", [1.0, 1.1, 0.9]))
+    for finding in same.findings:
+        assert finding.severity == "info"
+        assert finding.message.startswith("разницы по сидам нет: ")

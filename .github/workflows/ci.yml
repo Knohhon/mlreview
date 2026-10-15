@@ -29,3 +29,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev,mlflow,mcp]"  # адаптер MLflow (FR-C03) и MCP-сервер (FR-R02)
       - run: pytest
+      - run: python -m benchmark --perf  # NFR-06: ревью 100 тыс. примеров без LLM ≤ 2 мин
+        if: matrix.python-version == '3.13'
