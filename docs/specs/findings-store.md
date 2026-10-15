@@ -4,7 +4,7 @@
 
 ## Рабочее пространство
 
-Каталог `.mlreview/` в корне проекта: `config.yaml` (настройки, в том числе LLM — `docs/specs/llm.md`), `store.sqlite` (находки, прогоны, журнал — `docs/specs/journal.md`), `reports/` (отчёты проактивного режима), `llm-log.jsonl` (журнал запросов к LLM).
+Каталог `.mlreview/` в корне проекта: `config.yaml` (настройки, в том числе LLM — `docs/specs/llm.md`), `store.sqlite` (находки, прогоны, журнал — `docs/specs/journal.md`), `.mlreview/reports/` (отчёты проактивного режима), `llm-log.jsonl` (журнал запросов к LLM).
 
 - `mlreview init [каталог]` создаёт `.mlreview/` с `config.yaml` (LLM выключен: `llm: {provider: none}`) и пустой базой; код 0. Повторный вызов ничего не перезаписывает и сообщает «уже инициализировано».
 - Команды ищут рабочее пространство от текущего каталога вверх (как git); переменная окружения `MLREVIEW_HOME` указывает каталог `.mlreview` явно.
