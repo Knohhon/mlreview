@@ -11,7 +11,7 @@ description: Запустить все проверки mlreview — ruff check,
 python -m ruff check .; python -m ruff format --check .; python -m pytest -q
 ```
 
-Если `ruff` или `pytest` не найдены — установить зависимости разработки: `pip install -e ".[dev]"`. Без extra `mlflow` тесты адаптера MLflow пропускаются (`SKIPPED`) — в CI они выполняются; чтобы прогнать их локально, `pip install -e ".[dev,mlflow]"`.
+Если `ruff` или `pytest` не найдены — установить зависимости разработки: `pip install -e ".[dev]"`. Без extra `mlflow` тесты адаптера MLflow и команд `review`/`diagnose` пропускаются (`SKIPPED`), без scikit-learn — тесты бенчмарка. В CI выполняются все; локально — `pip install -r requirements.txt`.
 
 Исправления:
 - формат — `python -m ruff format .` (безопасно, только форматирование);

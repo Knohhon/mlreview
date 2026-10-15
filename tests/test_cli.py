@@ -26,7 +26,7 @@ def test_help_lists_spec_command(capsys):
     assert "spec" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("command", ["review", "metrics", "diagnose", "ask"])
+@pytest.mark.parametrize("command", ["metrics"])
 def test_unimplemented_command_fails_explicitly(command, capsys):
     assert main([command]) == 1
     assert "не реализована" in capsys.readouterr().err
