@@ -52,12 +52,13 @@ packages = ["src/mlreview"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # пакет benchmark/ в корне репозитория
 addopts = ["-ra", "--strict-markers"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 
 [tool.ruff.lint]
 select = [
@@ -88,7 +89,7 @@ ignore = [
 "tests/**" = ["PLR2004"]  # магические числа в ассертах допустимы
 
 [tool.ruff.lint.isort]
-known-first-party = ["mlreview"]
+known-first-party = ["mlreview", "benchmark"]
 
 [tool.ruff.format]
 quote-style = "double"
