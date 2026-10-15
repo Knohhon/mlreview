@@ -128,3 +128,11 @@ def save_run_files(  # noqa: PLR0913 — поля контракта прого�
 def is_finished(directory: Path) -> bool:
     """Каталог — завершённый прогон: есть `run.yaml` или `run.json` (FR-R04)."""
     return any((directory / f"run.{fmt}").is_file() for fmt in MAPPING_FORMATS)
+
+
+def run_id_of(directory: str | Path) -> str:
+    """Id прогона каталога: `run_id` из `run.yaml`/`run.json` или имя каталога."""
+    directory = Path(directory)
+    meta_path = _single(directory, "run", MAPPING_FORMATS)
+    run_id = (_read_mapping(meta_path) if meta_path else {}).get("run_id")
+    return directory.resolve().name if run_id is None else str(run_id)

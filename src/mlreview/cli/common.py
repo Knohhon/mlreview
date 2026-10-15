@@ -11,6 +11,8 @@ from mlreview.core.run_contract import RunContractError
 from mlreview.core.store import Store, StoreError
 from mlreview.core.task_spec import TaskSpecError
 from mlreview.core.workspace import INIT_HINT, Workspace, WorkspaceError, find_workspace
+from mlreview.llm.config import LLMConfigError
+from mlreview.llm.service import LLMContextError
 from mlreview.metrics.library import MetricsError
 
 
@@ -26,6 +28,8 @@ ERRORS: tuple[type[Exception], ...] = (
     StoreError,
     WorkspaceError,
     MetricsError,
+    LLMConfigError,
+    LLMContextError,
 )
 
 

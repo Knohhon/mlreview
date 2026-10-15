@@ -11,9 +11,9 @@ import sys
 from collections.abc import Callable, Sequence
 
 from mlreview import __version__
-from mlreview.cli import journal, llm, metrics, review, store
+from mlreview.cli import journal, llm, metrics, review, store, watch
 from mlreview.cli.common import ERRORS
-from mlreview.cli.review import render_report
+from mlreview.reporting import render_report
 
 __all__ = ["COMMANDS", "build_parser", "main", "render_report"]
 
@@ -28,6 +28,8 @@ COMMANDS: dict[str, str] = {
     "findings": "находки хранилища и их статусы",
     "dismiss": "отметить находку как неважную",
     "journal": "журнал гипотез и решений",
+    "watch": "проактивное ревью новых завершённых прогонов",
+    "mcp": "MCP-сервер с операциями CLI для агентов (stdio)",
 }
 
 
@@ -42,6 +44,8 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "findings": store.run_findings,
     "dismiss": store.run_dismiss,
     "journal": journal.run_journal,
+    "watch": watch.run_watch,
+    "mcp": watch.run_mcp,
 }
 ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "review": review.add_review_arguments,
@@ -54,6 +58,7 @@ ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "findings": store.add_findings_actions,
     "dismiss": store.add_dismiss_arguments,
     "journal": journal.add_journal_actions,
+    "watch": watch.add_watch_arguments,
 }
 
 

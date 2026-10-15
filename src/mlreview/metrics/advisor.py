@@ -14,6 +14,7 @@ from mlreview.core.task_spec import MetricsContext, TaskSpec
 from mlreview.metrics.catalog import CATALOG, parse_name
 
 IMBALANCE = 0.1
+COST_LEVELS = {"low": 1, "medium": 3, "high": 10}
 DEFAULT_K = 10
 DEFAULT_TOP_K = 3
 
@@ -200,3 +201,44 @@ def recommend(
             Recommendation(name, "primary" if index == 0 else "secondary", reason, info.pitfalls)
         )
     return MetricPlan(items, context, builder.notes)
+
+
+def _default_ratio(spec: TaskSpec) -> float:
+    costs = spec.task.error_costs
+    if spec.task.type == "regression":
+        under, over = costs.get("underestimation"), costs.get("overestimation")
+    else:
+        under, over = costs.get("false_negative"), costs.get("false_positive")
+    return COST_LEVELS.get(under or "low", 1) / COST_LEVELS.get(over or "low", 1)
+
+
+def default_answers(spec: TaskSpec) -> dict[str, Any]:
+    if spec.metrics is not None and spec.metrics.context is not None:
+        base = spec.metrics.context.model_dump()
+    else:
+        base = {}
+    defaults: dict[str, Any] = {
+        "decision": "threshold",
+        "budget_k": 10,
+        "cost_ratio": _default_ratio(spec),
+        "calibration": False,
+        "large_errors": False,
+        "critical_segments": list(spec.task.segments),
+    }
+    defaults.update({key: value for key, value in base.items() if value not in (None, [])})
+    return defaults
+
+
+def context_from_answers(spec: TaskSpec, answers: dict[str, Any]) -> MetricsContext:
+    keep = dict(answers)
+    if spec.task.type == "regression":
+        keep.pop("decision", None)
+        keep.pop("budget_k", None)
+        keep.pop("calibration", None)
+    else:
+        keep.pop("large_errors", None)
+        if keep.get("decision") != "ranking":
+            keep.pop("budget_k", None)
+        if spec.task.output != "probabilities":
+            keep.pop("calibration", None)
+    return MetricsContext.model_validate(keep)

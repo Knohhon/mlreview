@@ -32,6 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mlflow = ["mlflow>=2.10"]
+mcp = ["mcp>=2.3"]  # MCP-сервер `mlreview mcp` (FR-R02)
 dev = [
     "pytest>=8",
     "ruff>=0.6",

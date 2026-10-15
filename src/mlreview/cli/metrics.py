@@ -29,13 +29,12 @@ from mlreview.core.task_spec import (
     load_task_spec,
     parse_task_spec,
 )
-from mlreview.metrics.advisor import MetricPlan, recommend
+from mlreview.metrics.advisor import MetricPlan, context_from_answers, default_answers, recommend
 from mlreview.metrics.catalog import CATALOG
 from mlreview.metrics.export import export_metrics
 from mlreview.metrics.library import spec_metrics
 from mlreview.metrics.testing import positive_rate, run_metric_tests
 
-COST_LEVELS = {"low": 1, "medium": 3, "high": 10}
 ROLE_NAMES = {"primary": "основная", "secondary": "дополнительная"}
 YES = {"да", "д", "yes", "y", "true", "1"}
 NO = {"нет", "н", "no", "n", "false", "0"}
@@ -68,32 +67,6 @@ def add_metrics_actions(parser: argparse.ArgumentParser) -> None:
     listing.add_argument(
         "--output", choices=sorted({*CLASSIFICATION_OUTPUTS, *REGRESSION_OUTPUTS}), help="выход"
     )
-
-
-def _default_ratio(spec: TaskSpec) -> float:
-    costs = spec.task.error_costs
-    if spec.task.type == "regression":
-        under, over = costs.get("underestimation"), costs.get("overestimation")
-    else:
-        under, over = costs.get("false_negative"), costs.get("false_positive")
-    return COST_LEVELS.get(under or "low", 1) / COST_LEVELS.get(over or "low", 1)
-
-
-def _defaults(spec: TaskSpec) -> dict[str, Any]:
-    if spec.metrics is not None and spec.metrics.context is not None:
-        base = spec.metrics.context.model_dump()
-    else:
-        base = {}
-    defaults: dict[str, Any] = {
-        "decision": "threshold",
-        "budget_k": 10,
-        "cost_ratio": _default_ratio(spec),
-        "calibration": False,
-        "large_errors": False,
-        "critical_segments": list(spec.task.segments),
-    }
-    defaults.update({key: value for key, value in base.items() if value not in (None, [])})
-    return defaults
 
 
 def _ask(prompt: str, parse, default: Any) -> Any:
@@ -196,21 +169,6 @@ def _dialog(spec: TaskSpec, defaults: dict[str, Any]) -> dict[str, Any]:
     return answers
 
 
-def _context(spec: TaskSpec, answers: dict[str, Any]) -> MetricsContext:
-    keep = dict(answers)
-    if spec.task.type == "regression":
-        keep.pop("decision", None)
-        keep.pop("budget_k", None)
-        keep.pop("calibration", None)
-    else:
-        keep.pop("large_errors", None)
-        if keep.get("decision") != "ranking":
-            keep.pop("budget_k", None)
-        if spec.task.output != "probabilities":
-            keep.pop("calibration", None)
-    return MetricsContext.model_validate(keep)
-
-
 def _read_answers(path: Path) -> dict[str, Any]:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -254,7 +212,7 @@ def _replace_section(text: str, section_yaml: str) -> str:
 
 def _run_init(args: argparse.Namespace) -> int:
     spec = load_task_spec(args.spec)
-    defaults = _defaults(spec)
+    defaults = default_answers(spec)
     if args.answers is not None:
         answers = {**defaults, **_read_answers(args.answers)}
     elif sys.stdin.isatty():
@@ -266,7 +224,7 @@ def _run_init(args: argparse.Namespace) -> int:
     if args.run:
         contract = load_run(spec, args.run, tracking_uri=args.tracking_uri)
         rate = positive_rate(spec.task, prepare(spec.task, contract.predictions))
-    plan = recommend(spec, _context(spec, answers), rate)
+    plan = recommend(spec, context_from_answers(spec, answers), rate)
     print("\n".join(_render_plan(spec, plan)))
     if plan.limited_support:
         return 0

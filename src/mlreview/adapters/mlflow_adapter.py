@@ -135,3 +135,24 @@ def log_contract_artifacts(
             mlflow.log_artifact(str(path), artifact_path=ARTIFACT_DIR)
     if data_version is not None:
         mlflow.set_tag(DATA_VERSION_TAG, str(data_version))
+
+
+def finished_runs(experiment: str, *, tracking_uri: str | None = None) -> list[str]:
+    """Id завершённых (`FINISHED`) прогонов эксперимента по времени окончания (FR-R04)."""
+    mlflow = _mlflow()
+    client = mlflow.MlflowClient(tracking_uri=tracking_uri)
+    uri = tracking_uri or mlflow.get_tracking_uri()
+    try:
+        found = client.get_experiment_by_name(experiment)
+        if found is None:
+            raise MlflowAdapterError(f"эксперимент {experiment} не найден в {uri}")
+        runs = client.search_runs(
+            [found.experiment_id],
+            filter_string="attributes.status = 'FINISHED'",
+            order_by=["attributes.end_time ASC"],
+        )
+    except mlflow.exceptions.MlflowException as exc:
+        raise MlflowAdapterError(
+            f"прогоны эксперимента {experiment} не получены: {exc.message}"
+        ) from exc
+    return [run.info.run_id for run in runs]

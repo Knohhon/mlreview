@@ -6,10 +6,9 @@ import argparse
 from pathlib import Path
 
 from mlreview.cli.common import open_store
-from mlreview.core.store import KINDS, OUTCOMES, JournalEntry, SearchResult
+from mlreview.core.store import KINDS, OUTCOMES, JournalEntry
 from mlreview.core.task_spec import load_task_spec
-
-KIND_NAMES = {"hypothesis": "гипотеза", "decision": "решение", "note": "заметка"}
+from mlreview.reporting import entry_summary, render_search
 
 
 def add_journal_actions(parser: argparse.ArgumentParser) -> None:
@@ -39,14 +38,8 @@ def add_journal_actions(parser: argparse.ArgumentParser) -> None:
     search.add_argument("--spec", type=Path, help="спецификация: текущая версия данных")
 
 
-def _summary(entry: JournalEntry) -> str:
-    state = entry.status or entry.outcome
-    state_text = f" [{state}]" if state else ""
-    return f"{entry.id} {KIND_NAMES[entry.kind]}{state_text} — {entry.text}"
-
-
 def _details(entry: JournalEntry) -> list[str]:
-    lines = [_summary(entry), f"  время: {entry.created_at}"]
+    lines = [entry_summary(entry), f"  время: {entry.created_at}"]
     if entry.status:
         lines.append(f"  статус: {entry.status}")
     if entry.outcome:
@@ -60,29 +53,6 @@ def _details(entry: JournalEntry) -> list[str]:
     if entry.data_versions:
         lines.append(f"  версии данных: {', '.join(entry.data_versions)}")
     return lines
-
-
-def render_search(result: SearchResult) -> list[str]:
-    """Выдача поиска (B3–B7)."""
-    if result.hits:
-        lines = [f"найдено: {len(result.hits)}"]
-        for hit in result.hits:
-            lines.append(f"  {_summary(hit.entry)}")
-            if hit.entry.runs:
-                lines.append(f"     прогоны: {', '.join(hit.entry.runs)}")
-            if hit.entry.data_versions:
-                lines.append(f"     версии данных: {', '.join(hit.entry.data_versions)}")
-            lines += [f"     связано: {_summary(linked)}" for linked in hit.linked]
-            if hit.stale:
-                lines.append(f"     {hit.stale}")
-        return lines
-    if result.config_matches:
-        found = ", ".join(f"{run} ({key}={value})" for run, key, value in result.config_matches)
-        return [
-            f"в журнале записей нет; найдено в конфигах прогонов: {found};"
-            " причина решения не зафиксирована"
-        ]
-    return ["ничего не найдено"]
 
 
 def run_journal(args: argparse.Namespace) -> int:
@@ -101,7 +71,7 @@ def run_journal(args: argparse.Namespace) -> int:
         print(entry.id)
     elif action == "list":
         entries = store.entries(args.kind)
-        print("\n".join(_summary(entry) for entry in entries) if entries else "записей нет")
+        print("\n".join(entry_summary(entry) for entry in entries) if entries else "записей нет")
     elif action == "show":
         print("\n".join(_details(store.entry(args.entry_id))))
     else:
