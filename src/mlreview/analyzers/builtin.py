@@ -13,6 +13,7 @@ from mlreview.analyzers.process import process_findings
 from mlreview.analyzers.registry import Analyzer, ReviewContext, register
 from mlreview.analyzers.seeds import seed_findings
 from mlreview.analyzers.slices import segment_findings
+from mlreview.analyzers.suitability import suitability_findings
 from mlreview.core.findings import CheckResults
 
 
@@ -31,6 +32,12 @@ BUILTIN = (
         lambda ctx: segment_findings(ctx.spec, ctx.contract, ctx.baseline),
     ),
     Analyzer("comparison", "metrics", "FR-D01", _metrics),
+    Analyzer(
+        "suitability",
+        "metrics",
+        "FR-M03",
+        lambda ctx: suitability_findings(ctx.spec, ctx.contract),
+    ),
     Analyzer(
         "seeds",
         "metrics",

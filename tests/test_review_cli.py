@@ -192,9 +192,8 @@ def test_ask_requires_llm(capsys):
     assert "mlreview review <run_id> --spec <путь>" in err
 
 
-def test_metrics_not_implemented(capsys):
-    """C8: metrics — «пока не реализована», уровень L1."""
-    assert main(["metrics"]) == 1
-    err = capsys.readouterr().err
-    assert "команда пока не реализована" in err
-    assert "L1" in err
+def test_metrics_without_action_is_usage_error():
+    """C8: metrics без действия — ошибка использования, код 2."""
+    with pytest.raises(SystemExit) as exc:
+        main(["metrics"])
+    assert exc.value.code == 2

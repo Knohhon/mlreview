@@ -13,10 +13,11 @@ import numpy as np
 from scipy.stats import norm, ttest_ind
 
 from mlreview.analyzers.comparison import DECLINE_SUGGESTION
-from mlreview.analyzers.evaluation import Metric, is_worse, prepare, primary_metric, rounded
+from mlreview.analyzers.evaluation import Metric, is_worse, prepare, rounded
 from mlreview.core.findings import CheckResults, Finding
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
+from mlreview.metrics.library import primary
 
 ALPHA = 0.05
 POWER = 0.8
@@ -190,7 +191,7 @@ def seed_findings(
     baselines: Sequence[RunContract] | None,
 ) -> CheckResults:
     """Разброс по сидам кандидата и (с базовым прогоном) значимость разницы конфигураций."""
-    metric = primary_metric(spec.task)
+    metric = primary(spec)
     if not baselines:
         return _spread_results(metric, spec, candidates)
     return _comparison_results(metric, spec, candidates, baselines)

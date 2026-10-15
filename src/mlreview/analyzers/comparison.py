@@ -1,16 +1,16 @@
 """Метрики прогона и сравнение двух прогонов с интервалами и значимостью (FR-D01).
 
-Поведение зафиксировано в `docs/specs/run-comparison.md`.
+Метрики — из раздела `metrics:` спецификации или набор L0 (FR-M02). Поведение зафиксировано
+в `docs/specs/run-comparison.md`.
 """
 
 from __future__ import annotations
 
 from mlreview.analyzers.evaluation import (
-    METRICS,
     Estimate,
+    Metric,
     estimate_value,
     is_worse,
-    metric_names,
     pair_runs,
     paired_delta,
     prepare,
@@ -19,6 +19,7 @@ from mlreview.analyzers.evaluation import (
 from mlreview.core.findings import CheckResults, Finding
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
+from mlreview.metrics.library import spec_metrics
 
 VALUE_CHECK = "metrics.value"
 DELTA_CHECK = "comparison.metric_delta"
@@ -33,8 +34,9 @@ def run_metrics(spec: TaskSpec, contract: RunContract) -> CheckResults:
     """Метрики одного прогона с 95% интервалами (находки `metrics.value`)."""
     results = CheckResults()
     outputs = prepare(spec.task, contract.predictions)
-    for name in metric_names(spec.task):
-        estimate = estimate_value(METRICS[name], outputs)
+    for item in spec_metrics(spec):
+        name = item.name
+        estimate = estimate_value(item.metric, outputs)
         if isinstance(estimate, str):
             results.skip(VALUE_CHECK, estimate)
             continue
@@ -45,8 +47,10 @@ def run_metrics(spec: TaskSpec, contract: RunContract) -> CheckResults:
     return results
 
 
-def _delta_finding(name: str, primary: bool, base: float, cand: float, est: Estimate) -> Finding:
-    metric = METRICS[name]
+def _delta_finding(
+    metric: Metric, primary: bool, base: float, cand: float, est: Estimate
+) -> Finding:
+    name = metric.name
     base, cand = rounded(base), rounded(cand)
     delta = rounded(cand - base)
     low, high = rounded(est.low), rounded(est.high)
@@ -83,12 +87,12 @@ def compare_runs(spec: TaskSpec, candidate: RunContract, baseline: RunContract) 
     if isinstance(pair, str):
         results.skip(DELTA_CHECK, pair)
         return results
-    for position, name in enumerate(metric_names(spec.task)):
-        metric = METRICS[name]
+    for position, item in enumerate(spec_metrics(spec)):
+        metric = item.metric
         estimate = paired_delta(metric, pair.candidate, pair.baseline)
         if isinstance(estimate, str):
             results.skip(DELTA_CHECK, estimate)
             continue
         base, cand = metric(pair.baseline), metric(pair.candidate)
-        results.findings.append(_delta_finding(name, position == 0, base, cand, estimate))
+        results.findings.append(_delta_finding(metric, position == 0, base, cand, estimate))
     return results

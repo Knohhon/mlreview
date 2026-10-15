@@ -26,10 +26,11 @@ def test_help_lists_spec_command(capsys):
     assert "spec" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("command", ["metrics"])
-def test_unimplemented_command_fails_explicitly(command, capsys):
-    assert main([command]) == 1
-    assert "не реализована" in capsys.readouterr().err
+def test_metrics_requires_action():
+    """C8 (docs/specs/review.md): metrics без действия — ошибка использования."""
+    with pytest.raises(SystemExit) as exc:
+        main(["metrics"])
+    assert exc.value.code == 2
 
 
 def test_spec_validate_valid(tmp_path, capsys):

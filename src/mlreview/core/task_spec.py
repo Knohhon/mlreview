@@ -1,7 +1,8 @@
 """Спецификация задачи: формат YAML, схема и валидация (FR-C01).
 
 Спецификация описывает задачу, а не модель: тип задачи и выход, цену ошибок, важные сегменты,
-стратегию сплита и версию данных. Поведение зафиксировано в `docs/specs/task-spec.md`.
+стратегию сплита и версию данных; раздел `metrics:` — метрики задачи и ответы диалога о них
+(FR-M01–M05). Поведение зафиксировано в `docs/specs/task-spec.md` и `docs/specs/metrics.md`.
 """
 
 from __future__ import annotations
@@ -13,7 +14,16 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+from mlreview.metrics.catalog import CATALOG, check_name
 
 TaskType = Literal[
     "classification/binary",
@@ -162,11 +172,87 @@ class DataSection(_Section):
         return self
 
 
+Decision = Literal["threshold", "ranking", "probability"]
+
+
+class MetricsContext(_Section):
+    """Ответы диалога о контексте решения (FR-M01)."""
+
+    decision: Decision | None = None
+    budget_k: int | None = Field(default=None, ge=1)
+    cost_ratio: float | None = Field(default=None, gt=0)
+    calibration: bool | None = None
+    large_errors: bool | None = None
+    critical_segments: list[str] = []
+
+
+class CustomMetric(_Section):
+    """Пользовательская метрика: функция `f(labels, predictions) -> float` из файла (FR-M05)."""
+
+    name: str
+    path: str
+    function: str
+    higher_is_better: bool = True
+    bounded: Literal["high", "low"] | None = None
+
+
+class MetricsSection(_Section):
+    """Раздел `metrics`: основная и дополнительные метрики задачи (FR-M01–M05)."""
+
+    primary: str
+    secondary: list[str] = []
+    threshold: float = 0.5
+    context: MetricsContext | None = None
+    custom: list[CustomMetric] = []
+
+    @field_validator("threshold")
+    @classmethod
+    def _threshold_inside(cls, value: float) -> float:
+        if not 0 < value < 1:
+            raise ValueError("порог — число в (0, 1)")
+        return value
+
+    @property
+    def names(self) -> list[str]:
+        """Метрики задачи: основная первой."""
+        return [self.primary, *self.secondary]
+
+
+def _metrics_problems(task: TaskSection, metrics: MetricsSection) -> list[SpecProblem]:
+    """Метрики подходят к `task.type · task.output`, имена не повторяются (E1)."""
+    problems = []
+    custom = frozenset(metric.name for metric in metrics.custom)
+    for index, metric in enumerate(metrics.custom):
+        if metric.name.partition("@")[0] in CATALOG:
+            message = f"повтор: имя {metric.name!r} совпадает с метрикой каталога"
+            problems.append(SpecProblem(f"metrics.custom.{index}.name", message))
+    seen: set[str] = set()
+    paths = ["metrics.primary"] + [f"metrics.secondary.{i}" for i in range(len(metrics.secondary))]
+    for path, name in zip(paths, metrics.names, strict=True):
+        if name in seen:
+            problems.append(SpecProblem(path, f"повтор метрики {name!r}"))
+            continue
+        seen.add(name)
+        problem = check_name(name, task.type, task.output, custom)
+        if problem:
+            problems.append(SpecProblem(path, problem))
+    return problems
+
+
 class TaskSpec(_Section):
     """Спецификация задачи (FR-C01)."""
 
     task: TaskSection
     data: DataSection | None = None
+    metrics: MetricsSection | None = None
+
+    @model_validator(mode="after")
+    def _check_metrics(self) -> TaskSpec:
+        if self.metrics is not None:
+            problems = _metrics_problems(self.task, self.metrics)
+            if problems:
+                raise _SectionError(problems)
+        return self
 
 
 _SIMPLE_MESSAGES = {
@@ -177,6 +263,19 @@ _SIMPLE_MESSAGES = {
     "dict_type": "ожидается словарь",
     "model_type": "ожидается словарь",
     "model_attributes_type": "ожидается словарь",
+    "int_type": "ожидается целое число",
+    "int_parsing": "ожидается целое число",
+    "int_from_float": "ожидается целое число",
+    "float_type": "ожидается число",
+    "float_parsing": "ожидается число",
+    "bool_type": "ожидается true или false",
+    "bool_parsing": "ожидается true или false",
+}
+_BOUNDS = {
+    "greater_than": ("gt", ">"),
+    "greater_than_equal": ("ge", "≥"),
+    "less_than": ("lt", "<"),
+    "less_than_equal": ("le", "≤"),
 }
 
 
@@ -190,6 +289,11 @@ def _translate(error: dict[str, Any]) -> list[SpecProblem]:
             SpecProblem(f"{path}.{problem.path}" if path else problem.path, problem.message)
             for problem in cause.problems
         ]
+    if kind in _BOUNDS:
+        key, sign = _BOUNDS[kind]
+        return [SpecProblem(path, f"ожидается число {sign} {error['ctx'][key]}")]
+    if kind == "value_error" and cause is not None:
+        return [SpecProblem(path, str(cause))]
     if kind == "literal_error":
         allowed = re.findall(r"'([^']*)'", error["ctx"]["expected"])
         message = f"недопустимое значение {error['input']!r}; допустимо: {', '.join(allowed)}"
@@ -197,8 +301,24 @@ def _translate(error: dict[str, Any]) -> list[SpecProblem]:
     return [SpecProblem(path, _SIMPLE_MESSAGES.get(kind, error["msg"]))]
 
 
-def parse_task_spec(text: str, source: str = "<строка>") -> TaskSpec:
-    """Разбирает спецификацию задачи из строки YAML; `source` попадает в сообщения об ошибках."""
+def _resolve_custom_paths(data: dict[str, Any], base_dir: Path) -> None:
+    """Пути пользовательских метрик — относительно файла спецификации (FR-M05)."""
+    metrics = data.get("metrics")
+    custom = metrics.get("custom") if isinstance(metrics, dict) else None
+    if not isinstance(custom, list):
+        return
+    for item in custom:
+        if isinstance(item, dict) and isinstance(item.get("path"), str):
+            path = Path(item["path"])
+            if not path.is_absolute():
+                item["path"] = str((base_dir / path).resolve())
+
+
+def parse_task_spec(text: str, source: str = "<строка>", base_dir: Path | None = None) -> TaskSpec:
+    """Разбирает спецификацию задачи из строки YAML; `source` попадает в сообщения об ошибках.
+
+    `base_dir` — каталог файла спецификации: от него считаются пути пользовательских метрик.
+    """
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -211,6 +331,8 @@ def parse_task_spec(text: str, source: str = "<строка>") -> TaskSpec:
         found = "пустой документ" if data is None else f"{type(data).__name__}"
         message = f"верхний уровень должен быть словарём с разделом task, а не {found}"
         raise TaskSpecError(source, [SpecProblem("", message)])
+    if base_dir is not None:
+        _resolve_custom_paths(data, base_dir)
     try:
         return TaskSpec.model_validate(data)
     except ValidationError as exc:
@@ -238,4 +360,4 @@ def load_task_spec(path: str | Path) -> TaskSpec:
     except (OSError, UnicodeDecodeError) as exc:
         problem = SpecProblem("", f"не удалось прочитать файл: {exc}")
         raise TaskSpecError(str(path), [problem]) from None
-    return parse_task_spec(text, source=str(path))
+    return parse_task_spec(text, source=str(path), base_dir=path.parent)

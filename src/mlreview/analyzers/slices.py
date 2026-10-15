@@ -23,13 +23,13 @@ from mlreview.analyzers.evaluation import (
     pair_runs,
     paired_delta,
     prepare,
-    primary_metric,
     rounded,
     top_ids,
 )
 from mlreview.core.findings import CheckResults, Finding
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
+from mlreview.metrics.library import primary
 
 WORSE_CHECK = "slices.segment_worse"
 REGRESSION_CHECK = "slices.segment_regression"
@@ -122,7 +122,7 @@ def _worse_findings(
     spec: TaskSpec, outputs: Outputs, segments: list[str], examples: pd.DataFrame
 ) -> CheckResults:
     results = CheckResults()
-    metric = primary_metric(spec.task)
+    metric = primary(spec)
 
     def run_test(segment: str, value: str, mask: np.ndarray) -> _Test | str:
         if (~mask).sum() < MIN_SEGMENT_SIZE:
@@ -182,7 +182,7 @@ def _regression_findings(
     if isinstance(pair, str):
         results.skip(REGRESSION_CHECK, pair)
         return results
-    metric = primary_metric(spec.task)
+    metric = primary(spec)
     cand, base = pair.candidate, pair.baseline
 
     def run_test(segment: str, value: str, mask: np.ndarray) -> _Test | str:
