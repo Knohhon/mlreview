@@ -16,6 +16,7 @@ from mlreview.cli.common import (
     add_spec_argument,
     add_tracking_argument,
 )
+from mlreview.cli.llm import add_llm_arguments, hypotheses_for, outcome_lines
 from mlreview.core.findings import Finding, Report, severity_rank
 from mlreview.core.run_contract import RunContract
 from mlreview.core.store import STATUS_NAMES, Entry, ReviewRecord, RunRecord, Store
@@ -106,6 +107,7 @@ def add_run_arguments(
         "--limit", type=int, default=0, help="показать не больше N находок (0 — все)"
     )
     parser.add_argument("--no-store", action="store_true", help="не записывать находки в хранилище")
+    add_llm_arguments(parser, hypotheses=True)
 
 
 def add_review_arguments(parser: argparse.ArgumentParser) -> None:
@@ -288,10 +290,21 @@ def _analyze(args: argparse.Namespace, groups: tuple[str, ...], title: str) -> i
         report, [*candidates, *baselines], store=store, no_store=args.no_store
     )
     view = build_view(report, record, min_severity=args.min_severity, limit=args.limit, store=state)
+    outcome = None
+    if args.hypotheses:
+        items = [
+            (finding, entry.id if entry is not None else f"L{number}")
+            for number, (finding, entry) in enumerate(view.items, start=1)
+        ]
+        outcome = hypotheses_for(args, spec, report, items, contract)
     if args.format == "json":
-        print(json.dumps(report_payload(report, view), ensure_ascii=False, indent=2))
-    else:
+        payload = report_payload(report, view)
+        payload["llm"] = None if outcome is None else outcome.to_dict()
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif outcome is None:
         print(render_report(report, title, view))
+    else:
+        print(render_report(report, title, view, llm_line="\n".join(outcome_lines(outcome))))
     return 0
 
 

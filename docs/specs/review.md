@@ -61,7 +61,7 @@
 - C4. `--format json` · тогда в stdout — `Report.to_dict()` как JSON (UTF-8, кириллица без экранирования) с полем `"llm": null`; находки — после фильтров, с полями хранилища; поля `hidden_dismissed`, `hidden_by_filter`, `store` (`null` без хранилища).
 - C5. Дано: невалидная спецификация, ошибка адаптера или невалидный контракт кандидата или базового прогона · тогда код 1, сообщение в stderr.
 - C6. Дано: нет `--spec`, нет id прогона, `diagnose` без группы · тогда ошибка использования argparse, код 2.
-- C7. `mlreview ask <вопрос>` · тогда код 1 и в stderr «mlreview ask: требует LLM — LLM-слой не подключён (появится на L1, FR-L01); детерминированные находки без LLM: mlreview review <run_id> --spec <путь>» (X2: явный отказ, а не падение).
+- C7. `mlreview ask <вопрос>` без LLM · тогда код 1 и в stderr «mlreview ask: требует LLM — в настройках llm.provider: none (.mlreview/config.yaml); детерминированно без LLM: mlreview journal search <запрос>, mlreview review <run_id> --spec <путь>» (X2: явный отказ, а не падение); с LLM — `docs/specs/llm.md`.
 - C8. `mlreview metrics` без действия · тогда ошибка использования argparse, код 2; действия `init`, `test`, `export`, `list` — `docs/specs/metrics.md`.
 
 ## Деградация и ошибки

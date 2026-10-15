@@ -188,7 +188,7 @@ def test_ask_requires_llm(capsys):
     """C7: ask без LLM — явный отказ, код 1."""
     assert main(["ask", "почему", "хуже?"]) == 1
     err = capsys.readouterr().err
-    assert err.startswith("mlreview ask: требует LLM — LLM-слой не подключён")
+    assert err.startswith("mlreview ask: требует LLM — в настройках llm.provider: none")
     assert "mlreview review <run_id> --spec <путь>" in err
 
 

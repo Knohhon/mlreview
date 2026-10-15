@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from mlreview import __version__
-from mlreview.cli import journal, metrics, review, store
+from mlreview.cli import journal, llm, metrics, review, store
 from mlreview.cli.common import ERRORS
 from mlreview.cli.review import render_report
 
@@ -31,24 +31,11 @@ COMMANDS: dict[str, str] = {
 }
 
 
-def _run_ask(_args: argparse.Namespace) -> int:
-    print(
-        "mlreview ask: требует LLM — LLM-слой не подключён (появится на L1, FR-L01); "
-        "детерминированные находки без LLM: mlreview review <run_id> --spec <путь>",
-        file=sys.stderr,
-    )
-    return 1
-
-
-def _add_ask_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("question", nargs="*", help="вопрос по истории проекта и находкам")
-
-
 HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "review": review.run_review,
     "metrics": metrics.run_metrics,
     "diagnose": review.run_diagnose,
-    "ask": _run_ask,
+    "ask": llm.run_ask,
     "spec": review.run_spec,
     "contract": review.run_contract,
     "init": store.run_init,
@@ -60,7 +47,7 @@ ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "review": review.add_review_arguments,
     "metrics": metrics.add_metrics_actions,
     "diagnose": review.add_diagnose_actions,
-    "ask": _add_ask_arguments,
+    "ask": llm.add_ask_arguments,
     "spec": review.add_spec_actions,
     "contract": review.add_contract_actions,
     "init": store.add_init_arguments,
