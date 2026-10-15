@@ -79,10 +79,11 @@ def test_review_text_report(runs, capsys):
     assert lines[6] == "     примеры: te-000, te-001, te-002, te-003, te-004"
     assert lines[7].startswith("     предложение: ")
     assert any("comparison.metric_delta — roc_auc: " in line for line in lines)
-    assert "не проверено: 1" in lines
+    assert any(line.startswith("не проверено: ") for line in lines)
     assert (
         "  - data.temporal_leak: split_strategy в спецификации — stratified, а не temporal" in lines
     )
+    assert "  - curves: нет curves — кривые обучения не залогированы" in lines
     assert lines[-1] == "LLM: не используется — отчёт детерминированный"
 
 

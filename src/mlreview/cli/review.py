@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from mlreview.adapters.base import load_run, run_source
-from mlreview.analyzers.review import review
+from mlreview.analyzers.review import GROUPS, review
 from mlreview.cli.common import (
     RUN_HELP,
     add_severity_argument,
@@ -80,12 +80,25 @@ def run_contract(args: argparse.Namespace) -> int:
     return 0
 
 
-def add_run_arguments(parser: argparse.ArgumentParser, *, baseline: bool) -> None:
-    """Общие аргументы команд анализа прогона (FR-R01, FR-R05)."""
-    parser.add_argument("run_id", help=RUN_HELP)
+def add_run_arguments(
+    parser: argparse.ArgumentParser, *, baseline: bool, seeds: bool = False
+) -> None:
+    """Общие аргументы команд анализа прогона (FR-R01, FR-R05, FR-D05)."""
+    if seeds:
+        parser.add_argument(
+            "run_id", nargs="+", help=RUN_HELP + "; следующие — сиды той же конфигурации"
+        )
+    else:
+        parser.add_argument("run_id", help=RUN_HELP)
     add_spec_argument(parser)
     if baseline:
-        parser.add_argument("--baseline", help="базовый прогон для сравнения: " + RUN_HELP)
+        parser.add_argument(
+            "--baseline",
+            nargs="+" if seeds else None,
+            help="базовый прогон для сравнения: "
+            + RUN_HELP
+            + ("; следующие — его сиды" if seeds else ""),
+        )
     add_tracking_argument(parser)
     parser.add_argument("--format", choices=("text", "json"), default="text", help="формат отчёта")
     add_severity_argument(parser, "info")
@@ -96,17 +109,22 @@ def add_run_arguments(parser: argparse.ArgumentParser, *, baseline: bool) -> Non
 
 
 def add_review_arguments(parser: argparse.ArgumentParser) -> None:
-    add_run_arguments(parser, baseline=True)
+    add_run_arguments(parser, baseline=True, seeds=True)
+
+
+DIAGNOSE_HELP = {
+    "data": "проверки данных: дубли между сплитами, временная утечка, сильные признаки",
+    "segments": "срезы: сегменты хуже остальных и регрессии сегментов",
+    "curves": "кривые обучения: переобучение, недообучение, нестабильность",
+    "process": "процесс: разные данные, несколько изменений, многократная валидация",
+}
 
 
 def add_diagnose_actions(parser: argparse.ArgumentParser) -> None:
     actions = parser.add_subparsers(dest="diagnose_action", metavar="<группа>", required=True)
-    data_help = "проверки данных: дубли между сплитами, временная утечка, сильные признаки"
-    data = actions.add_parser("data", help=data_help, description=data_help)
-    add_run_arguments(data, baseline=False)
-    segments_help = "срезы: сегменты хуже остальных и регрессии сегментов"
-    segments = actions.add_parser("segments", help=segments_help, description=segments_help)
-    add_run_arguments(segments, baseline=True)
+    for group, help_text in DIAGNOSE_HELP.items():
+        action = actions.add_parser(group, help=help_text, description=help_text)
+        add_run_arguments(action, baseline=group != "data")
 
 
 @dataclass
@@ -212,31 +230,64 @@ def report_payload(report: Report, view: ReportView) -> dict[str, Any]:
     return payload
 
 
+def _store() -> Store | None:
+    workspace = find_workspace()
+    return None if workspace is None else Store(workspace.store_path)
+
+
 def record_report(
-    report: Report, contracts: Sequence[tuple[RunContract, str]], *, no_store: bool
+    report: Report,
+    contracts: Sequence[tuple[RunContract, str]],
+    *,
+    store: Store | None,
+    no_store: bool,
 ) -> tuple[ReviewRecord | None, str]:
     """Записывает отчёт в хранилище рабочего пространства; строка — состояние хранилища."""
     if no_store:
         return None, NOT_USED
-    workspace = find_workspace()
-    if workspace is None:
+    if store is None:
         return None, NOT_CONNECTED
-    store = Store(workspace.store_path)
     runs = [RunRecord.from_contract(contract, source) for contract, source in contracts]
     return store.record_review(report, runs=runs), str(store.path)
 
 
+def _refs(value: str | Sequence[str] | None) -> list[str]:
+    if value is None:
+        return []
+    return [value] if isinstance(value, str) else list(value)
+
+
 def _analyze(args: argparse.Namespace, groups: tuple[str, ...], title: str) -> int:
     spec = load_task_spec(args.spec)
-    contract = load_run(spec, args.run_id, tracking_uri=args.tracking_uri)
-    contracts = [(contract, run_source(args.run_id, args.tracking_uri))]
-    baseline = None
-    if getattr(args, "baseline", None):
-        baseline = load_run(spec, args.baseline, tracking_uri=args.tracking_uri)
-        contracts.append((baseline, run_source(args.baseline, args.tracking_uri)))
-    report = review(spec, contract, baseline, groups=groups)
-    record, store = record_report(report, contracts, no_store=args.no_store)
-    view = build_view(report, record, min_severity=args.min_severity, limit=args.limit, store=store)
+    loaded = {}
+    for role in ("run_id", "baseline"):
+        loaded[role] = [
+            (
+                load_run(spec, ref, tracking_uri=args.tracking_uri),
+                run_source(ref, args.tracking_uri),
+            )
+            for ref in _refs(getattr(args, role, None))
+        ]
+    candidates, baselines = loaded["run_id"], loaded["baseline"]
+    contract = candidates[0][0]
+    baseline = baselines[0][0] if baselines else None
+    store = None if args.no_store else _store()
+    prior = None
+    if store is not None:
+        prior = store.count_runs(contract.data_hash, exclude=[contract.run_id])
+    report = review(
+        spec,
+        contract,
+        baseline,
+        groups=groups,
+        candidate_seeds=[run for run, _ in candidates[1:]],
+        baseline_seeds=[run for run, _ in baselines[1:]],
+        prior_runs=prior,
+    )
+    record, state = record_report(
+        report, [*candidates, *baselines], store=store, no_store=args.no_store
+    )
+    view = build_view(report, record, min_severity=args.min_severity, limit=args.limit, store=state)
     if args.format == "json":
         print(json.dumps(report_payload(report, view), ensure_ascii=False, indent=2))
     else:
@@ -245,12 +296,14 @@ def _analyze(args: argparse.Namespace, groups: tuple[str, ...], title: str) -> i
 
 
 def run_review(args: argparse.Namespace) -> int:
-    return _analyze(args, ("data", "segments", "metrics"), "ревью прогона")
+    return _analyze(args, GROUPS, "ревью прогона")
 
 
 DIAGNOSE_TITLES = {
     "data": "диагностика данных прогона",
     "segments": "диагностика сегментов прогона",
+    "curves": "диагностика кривых обучения прогона",
+    "process": "диагностика процесса прогона",
 }
 
 

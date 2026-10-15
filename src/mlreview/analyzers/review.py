@@ -1,34 +1,20 @@
-"""Ревью прогона: группы проверок data, segments, metrics → отчёт (FR-R01, FR-D01–D03).
+"""Ревью прогона: анализаторы выбранных групп → отчёт (FR-R01, FR-D01–D08, FR-E01).
 
 Отчёт детерминированный и работает без LLM (NFR-03); что не проверено — в `skipped` (X1).
-Поведение зафиксировано в `docs/specs/review.md`.
+Поведение зафиксировано в `docs/specs/review.md` и `docs/specs/analyzers.md`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
-from mlreview.analyzers.comparison import compare_runs, run_metrics
-from mlreview.analyzers.data_checks import data_findings
-from mlreview.analyzers.slices import segment_findings
-from mlreview.core.findings import CheckResults, Report, sort_findings
+from mlreview.analyzers import builtin  # noqa: F401 — регистрирует встроенные анализаторы
+from mlreview.analyzers.registry import GROUPS, ReviewContext, run_analyzers
+from mlreview.core.findings import Report, sort_findings
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
 
-GROUPS: tuple[str, ...] = ("data", "segments", "metrics")
-
-
-def _metrics(spec: TaskSpec, contract: RunContract, baseline: RunContract | None) -> CheckResults:
-    return (
-        run_metrics(spec, contract) if baseline is None else compare_runs(spec, contract, baseline)
-    )
-
-
-_RUNNERS: dict[str, Callable[[TaskSpec, RunContract, RunContract | None], CheckResults]] = {
-    "data": lambda spec, contract, _baseline: data_findings(spec, contract),
-    "segments": segment_findings,
-    "metrics": _metrics,
-}
+__all__ = ["GROUPS", "review"]
 
 
 def _common_examples(candidate: RunContract, baseline: RunContract) -> int:
@@ -36,20 +22,26 @@ def _common_examples(candidate: RunContract, baseline: RunContract) -> int:
     return len(ids & set(baseline.predictions["example_id"].astype(str)))
 
 
-def review(
+def review(  # noqa: PLR0913 — прогоны, сиды и история ревью
     spec: TaskSpec,
     contract: RunContract,
     baseline: RunContract | None = None,
     groups: Sequence[str] = GROUPS,
+    *,
+    candidate_seeds: Sequence[RunContract] = (),
+    baseline_seeds: Sequence[RunContract] = (),
+    prior_runs: int | None = None,
 ) -> Report:
-    """Запускает выбранные группы проверок и собирает отчёт."""
-    unknown = [group for group in groups if group not in GROUPS]
-    if unknown:
-        raise ValueError(f"неизвестные группы проверок: {', '.join(unknown)}")
-    results = CheckResults()
-    for group in GROUPS:
-        if group in groups:
-            results.extend(_RUNNERS[group](spec, contract, baseline))
+    """Запускает анализаторы выбранных групп и собирает отчёт."""
+    ctx = ReviewContext(
+        spec,
+        contract,
+        baseline,
+        tuple(candidate_seeds),
+        tuple(baseline_seeds) if baseline is not None else (),
+        prior_runs,
+    )
+    results = run_analyzers(ctx, groups)
     return Report(
         run_id=contract.run_id,
         findings=sort_findings(results.findings),
@@ -60,4 +52,6 @@ def review(
         compared_examples=None if baseline is None else _common_examples(contract, baseline),
         data_hash=contract.data_hash,
         baseline_data_hash=None if baseline is None else baseline.data_hash,
+        candidate_seeds=tuple(run.run_id for run in ctx.candidate_seeds),
+        baseline_seeds=tuple(run.run_id for run in ctx.baseline_seeds),
     )

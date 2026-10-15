@@ -133,6 +133,8 @@ class Report:
     compared_examples: int | None = None
     data_hash: str | None = None
     baseline_data_hash: str | None = None
+    candidate_seeds: tuple[str, ...] = ()
+    baseline_seeds: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -143,6 +145,8 @@ class Report:
             "data_hash": self.data_hash,
             "baseline_data_hash": self.baseline_data_hash,
             "compared_examples": self.compared_examples,
+            "candidate_seeds": list(self.candidate_seeds),
+            "baseline_seeds": list(self.baseline_seeds),
             "findings": [finding.to_dict() for finding in self.findings],
             "skipped": [skipped.to_dict() for skipped in self.skipped],
             "llm": None,
