@@ -1,8 +1,9 @@
-"""Находки анализаторов и отчёт ревью (FR-D01–D03, FR-R01).
+"""Находки анализаторов и отчёт ревью (FR-D01–D03, FR-R01, FR-R05).
 
-Находка — детерминированный факт с важностью и доказательствами; LLM-слой (L1) только
-синтезирует гипотезы поверх находок и берёт числа из `facts` (FR-L02). Хранилище находок
-со статусами — FR-C05, L1. Поведение зафиксировано в `docs/specs/review.md`.
+Находка — детерминированный факт с важностью и доказательствами; LLM-слой только
+синтезирует гипотезы поверх находок и берёт числа из `facts` (FR-L02). Отпечаток находки
+для хранилища и отметки «не важно» (FR-C05, FR-R05) — `fingerprint` и `magnitude`.
+Поведение зафиксировано в `docs/specs/review.md` и `docs/specs/findings-store.md`.
 """
 
 from __future__ import annotations
@@ -66,6 +67,44 @@ class CheckResults:
         self.skipped += other.skipped
 
 
+# Ключи объекта находки в `facts`: отпечаток не зависит от чисел (docs/specs/findings-store.md).
+IDENTITY: dict[str, tuple[str, ...]] = {
+    "data.temporal_leak": ("earlier_split", "later_split"),
+}
+# Факт с величиной эффекта: рост модуля вдвое — существенное изменение условий.
+MAGNITUDE: dict[str, str] = {
+    "data.split_duplicates": "share",
+    "data.temporal_leak": "share",
+    "data.strong_feature": "value",
+    "slices.segment_worse": "delta",
+    "slices.segment_regression": "delta",
+    "comparison.metric_delta": "delta",
+}
+
+
+def fingerprint(finding: Finding) -> str:
+    """Отпечаток находки: проверка и её объект (строковые факты или ключи из `IDENTITY`)."""
+    keys = IDENTITY.get(finding.check)
+    if keys is None:
+        keys = tuple(sorted(k for k, v in finding.facts.items() if isinstance(v, str)))
+    parts = [f"{key}={finding.facts.get(key)}" for key in keys]
+    return "|".join([finding.check, *parts])
+
+
+def magnitude(finding: Finding) -> float | None:
+    """Величина эффекта находки или `None`, если для проверки она не задана."""
+    key = MAGNITUDE.get(finding.check)
+    value = finding.facts.get(key) if key else None
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def severity_rank(severity: str) -> int:
+    """Номер важности: 0 — critical, 4 — info."""
+    return SEVERITIES.index(severity)  # type: ignore[arg-type]
+
+
 def sort_findings(findings: Iterable[Finding]) -> list[Finding]:
     """Сортирует находки: важность (critical первыми), затем проверка и сообщение."""
     return sorted(findings, key=lambda f: (SEVERITIES.index(f.severity), f.check, f.message))
@@ -92,6 +131,10 @@ class Report:
     data_version: str | None = None
     baseline_data_version: str | None = None
     compared_examples: int | None = None
+    data_hash: str | None = None
+    baseline_data_hash: str | None = None
+    candidate_seeds: tuple[str, ...] = ()
+    baseline_seeds: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,7 +142,11 @@ class Report:
             "baseline_id": self.baseline_id,
             "data_version": self.data_version,
             "baseline_data_version": self.baseline_data_version,
+            "data_hash": self.data_hash,
+            "baseline_data_hash": self.baseline_data_hash,
             "compared_examples": self.compared_examples,
+            "candidate_seeds": list(self.candidate_seeds),
+            "baseline_seeds": list(self.baseline_seeds),
             "findings": [finding.to_dict() for finding in self.findings],
             "skipped": [skipped.to_dict() for skipped in self.skipped],
             "llm": None,

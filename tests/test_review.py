@@ -146,10 +146,15 @@ def test_review_without_examples_degrades_explicitly():
     report = review(SPEC, _run(with_examples=False))
 
     skipped = [s.check for s in report.skipped]
-    assert skipped == [
+    assert skipped[:4] == [
         "data.split_duplicates",
         "data.temporal_leak",
         "data.strong_feature",
         "slices.segment_worse",
     ]
-    assert {f.check for f in report.findings} == {"metrics.value"}
+    assert all(not check.startswith(("data.", "slices.")) for check in skipped[4:])
+    assert "metrics.value" in {f.check for f in report.findings}
+    assert not {f.check for f in report.findings} & {
+        "data.split_duplicates",
+        "slices.segment_worse",
+    }

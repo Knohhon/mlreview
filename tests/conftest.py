@@ -40,6 +40,13 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_workspace(tmp_path, monkeypatch):
+    """Тесты не находят рабочее пространство .mlreview разработчика (FR-C05)."""
+    monkeypatch.delenv("MLREVIEW_HOME", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture(scope="session")
 def _mlflow_db_template(tmp_path_factory):
     """Пустая sqlite-база MLflow: миграции схемы выполняются один раз за сессию."""

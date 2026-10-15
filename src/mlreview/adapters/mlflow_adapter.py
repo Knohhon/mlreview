@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 
+from mlreview.adapters.errors import AdapterError
 from mlreview.core.run_contract import RunContract, build_run_contract
 from mlreview.core.task_spec import TaskSpec
 
@@ -23,7 +24,7 @@ TABLE_FORMATS = ("parquet", "csv")
 INSTALL_HINT = 'pip install "mlreview[mlflow]"'
 
 
-class MlflowAdapterError(RuntimeError):
+class MlflowAdapterError(AdapterError):
     """Прогон MLflow не прочитан или не записан; сообщение объясняет причину."""
 
 
@@ -134,3 +135,24 @@ def log_contract_artifacts(
             mlflow.log_artifact(str(path), artifact_path=ARTIFACT_DIR)
     if data_version is not None:
         mlflow.set_tag(DATA_VERSION_TAG, str(data_version))
+
+
+def finished_runs(experiment: str, *, tracking_uri: str | None = None) -> list[str]:
+    """Id завершённых (`FINISHED`) прогонов эксперимента по времени окончания (FR-R04)."""
+    mlflow = _mlflow()
+    client = mlflow.MlflowClient(tracking_uri=tracking_uri)
+    uri = tracking_uri or mlflow.get_tracking_uri()
+    try:
+        found = client.get_experiment_by_name(experiment)
+        if found is None:
+            raise MlflowAdapterError(f"эксперимент {experiment} не найден в {uri}")
+        runs = client.search_runs(
+            [found.experiment_id],
+            filter_string="attributes.status = 'FINISHED'",
+            order_by=["attributes.end_time ASC"],
+        )
+    except mlflow.exceptions.MlflowException as exc:
+        raise MlflowAdapterError(
+            f"прогоны эксперимента {experiment} не получены: {exc.message}"
+        ) from exc
+    return [run.info.run_id for run in runs]

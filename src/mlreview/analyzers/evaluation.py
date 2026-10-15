@@ -39,13 +39,19 @@ class Outputs:
     n_classes: int | None = None
 
     def __len__(self) -> int:
-        return len(self.ids)
+        return len(self.labels)
 
     def take(self, index: np.ndarray) -> Outputs:
         return Outputs(self.ids[index], self.labels[index], self.values[index], self.n_classes)
 
+    def resample(self, index: np.ndarray) -> Outputs:
+        """Бутстрап-выборка без id: метрикам id не нужны, а копировать строки дорого."""
+        return Outputs(_NO_IDS, self.labels[index], self.values[index], self.n_classes)
 
+
+_NO_IDS = np.empty(0, dtype=str)
 MetricFn = Callable[[Outputs], float]
+Sampler = Callable[[Outputs], Callable[[np.ndarray], float]]
 
 
 @dataclass(frozen=True)
@@ -56,9 +62,47 @@ class Metric:
     fn: MetricFn
     higher_is_better: bool
     undefined: str
+    sampler: Sampler | None = None
 
     def __call__(self, outputs: Outputs) -> float:
         return self.fn(outputs)
+
+    def on_resamples(self, outputs: Outputs) -> Callable[[np.ndarray], float]:
+        """Функция индексов бутстрап-выборки → значение метрики на ней.
+
+        Быстрый путь `sampler` (например, для ROC AUC) даёт то же значение, что метрика
+        на `outputs.resample(index)`, без пересортировки на каждой выборке (NFR-06).
+        """
+        if self.sampler is not None:
+            return self.sampler(outputs)
+        return lambda index: self.fn(outputs.resample(index))
+
+
+def auc_sampler(outputs: Outputs) -> Callable[[np.ndarray], float]:
+    """ROC AUC на бутстрап-выборках через веса повторов: O(n) на выборку (NFR-06).
+
+    Выборка с повторами — это веса примеров; AUC = Σ по положительным весам (число
+    отрицательных ниже + ½ равных) / (P·N) — то же, что Манн — Уитни со средними рангами.
+    """
+    scores = np.asarray(outputs.values, dtype=float)
+    positive = outputs.labels == 1
+    _, groups = np.unique(scores, return_inverse=True)
+    size = int(groups.max()) + 1 if len(groups) else 0
+    n = len(scores)
+
+    def value(index: np.ndarray) -> float:
+        counts = np.bincount(index, minlength=n).astype(float)
+        pos = counts * positive
+        neg = counts - pos
+        n_pos, n_neg = pos.sum(), neg.sum()
+        if n_pos == 0 or n_neg == 0:
+            return float("nan")
+        neg_group = np.bincount(groups, weights=neg, minlength=size)
+        pos_group = np.bincount(groups, weights=pos, minlength=size)
+        below = np.cumsum(neg_group) - neg_group
+        return float(np.sum(pos_group * (below + 0.5 * neg_group)) / (n_pos * n_neg))
+
+    return value
 
 
 def _predicted_class(outputs: Outputs) -> np.ndarray:
@@ -155,7 +199,7 @@ METRICS: dict[str, Metric] = {
         Metric("recall", _recall, True, "нет примеров класса 1"),
         Metric("f1", _f1, True, "нет ни примеров, ни предсказаний класса 1"),
         Metric("macro_f1", _macro_f1, True, "нет примеров"),
-        Metric("roc_auc", _roc_auc, True, "в примерах один класс"),
+        Metric("roc_auc", _roc_auc, True, "в примерах один класс", auc_sampler),
         Metric("log_loss", _log_loss, False, "нет примеров"),
         Metric("brier", _brier, False, "нет примеров"),
         Metric("mae", _mae, False, "нет примеров"),
@@ -284,7 +328,8 @@ def estimate_value(metric: Metric, outputs: Outputs) -> Estimate | str:
     if not np.isfinite(value):
         return undefined_reason(metric)
     n = len(outputs)
-    samples = _bootstrap(lambda rng: metric(outputs.take(rng.integers(0, n, n))))
+    on_sample = metric.on_resamples(outputs)
+    samples = _bootstrap(lambda rng: on_sample(rng.integers(0, n, n)))
     if isinstance(samples, int):
         return unstable_reason(metric.name, samples)
     return _estimate(value, samples, n)
@@ -296,10 +341,11 @@ def paired_delta(metric: Metric, candidate: Outputs, baseline: Outputs) -> Estim
     if not np.isfinite(delta):
         return undefined_reason(metric)
     n = len(candidate)
+    on_candidate, on_baseline = metric.on_resamples(candidate), metric.on_resamples(baseline)
 
     def statistic(rng: np.random.Generator) -> float:
         index = rng.integers(0, n, n)
-        return metric(candidate.take(index)) - metric(baseline.take(index))
+        return on_candidate(index) - on_baseline(index)
 
     samples = _bootstrap(statistic)
     if isinstance(samples, int):
@@ -313,11 +359,11 @@ def independent_delta(metric: Metric, group: Outputs, rest: Outputs) -> Estimate
     if not np.isfinite(delta):
         return undefined_reason(metric)
     n_group, n_rest = len(group), len(rest)
+    on_group, on_rest = metric.on_resamples(group), metric.on_resamples(rest)
 
     def statistic(rng: np.random.Generator) -> float:
-        group_sample = group.take(rng.integers(0, n_group, n_group))
-        rest_sample = rest.take(rng.integers(0, n_rest, n_rest))
-        return metric(group_sample) - metric(rest_sample)
+        group_value = on_group(rng.integers(0, n_group, n_group))
+        return group_value - on_rest(rng.integers(0, n_rest, n_rest))
 
     samples = _bootstrap(statistic)
     if isinstance(samples, int):

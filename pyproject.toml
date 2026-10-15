@@ -28,10 +28,12 @@ dependencies = [
     "pandas>=2.1",    # контракт прогона, срезы, дубли между сплитами (FR-C02, FR-D02, FR-D03)
     "pyyaml>=6.0",    # спецификация задачи в YAML (FR-C01)
     "pydantic>=2.6",  # схема и валидация спецификации и контракта прогона (FR-C01, FR-C02)
+    "pyarrow>=14",    # parquet в адаптере локальных файлов (FR-C03)
 ]
 
 [project.optional-dependencies]
 mlflow = ["mlflow>=2.10"]
+mcp = ["mcp>=2.3"]  # MCP-сервер `mlreview mcp` (FR-R02)
 dev = [
     "pytest>=8",
     "ruff>=0.6",

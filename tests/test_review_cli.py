@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 
 import numpy as np
@@ -70,17 +71,19 @@ def test_review_text_report(runs, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == f"ревью прогона {ids['cand']}"
     assert lines[1] == f"  базовый прогон: {ids['base']}, общих примеров: 200"
-    assert lines[2] == "  версия данных: v1 → v2"
-    assert lines[3].startswith("находки: ")
-    assert lines[4].startswith("  1. [critical] data.split_duplicates — 5 из 200 примеров test")
-    assert lines[4].endswith("(FR-D03, B01)")
-    assert lines[5] == "     примеры: te-000, te-001, te-002, te-003, te-004"
-    assert lines[6].startswith("     предложение: ")
+    assert re.fullmatch(r"  версия данных: v1 \(sha256:\w{16}\) → v2 \(sha256:\w{16}\)", lines[2])
+    assert lines[3] == "  хранилище находок: не подключено — mlreview init"
+    assert lines[4].startswith("находки: ")
+    assert lines[5].startswith("  1. [critical] data.split_duplicates — 5 из 200 примеров test")
+    assert lines[5].endswith("(FR-D03, B01)")
+    assert lines[6] == "     примеры: te-000, te-001, te-002, te-003, te-004"
+    assert lines[7].startswith("     предложение: ")
     assert any("comparison.metric_delta — roc_auc: " in line for line in lines)
-    assert "не проверено: 1" in lines
+    assert any(line.startswith("не проверено: ") for line in lines)
     assert (
         "  - data.temporal_leak: split_strategy в спецификации — stratified, а не temporal" in lines
     )
+    assert "  - curves: нет curves — кривые обучения не залогированы" in lines
     assert lines[-1] == "LLM: не используется — отчёт детерминированный"
 
 
@@ -137,8 +140,8 @@ def test_review_no_findings_line(tmp_path, mlflow_store, capsys):
     assert main(argv) == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[1] == "  версия данных: нет"
-    assert lines[2] == "находок нет"
+    assert re.fullmatch(r"  версия данных: нет \(sha256:\w{16}\)", lines[1])
+    assert lines[3] == "находок нет"
 
 
 def test_review_errors(runs, tmp_path, capsys):
@@ -185,13 +188,12 @@ def test_ask_requires_llm(capsys):
     """C7: ask без LLM — явный отказ, код 1."""
     assert main(["ask", "почему", "хуже?"]) == 1
     err = capsys.readouterr().err
-    assert err.startswith("mlreview ask: требует LLM — LLM-слой не подключён")
+    assert err.startswith("mlreview ask: требует LLM — в настройках llm.provider: none")
     assert "mlreview review <run_id> --spec <путь>" in err
 
 
-def test_metrics_not_implemented(capsys):
-    """C8: metrics — «пока не реализована», уровень L1."""
-    assert main(["metrics"]) == 1
-    err = capsys.readouterr().err
-    assert "команда пока не реализована" in err
-    assert "L1" in err
+def test_metrics_without_action_is_usage_error():
+    """C8: metrics без действия — ошибка использования, код 2."""
+    with pytest.raises(SystemExit) as exc:
+        main(["metrics"])
+    assert exc.value.code == 2

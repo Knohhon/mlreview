@@ -35,6 +35,7 @@ contract = load_mlflow_contract(spec, run_id, tracking_uri="sqlite:///mlflow.db"
 - B4. Дано: в прогоне только артефакт предсказаний · тогда контракт валиден, `gaps` перечисляет `examples`, `curves`, `config`, `data_version`.
 - B5. Дано: `tracking_uri` не передан · тогда используется адрес трекера по умолчанию MLflow (переменная окружения `MLFLOW_TRACKING_URI`).
 - B6. Дано: активный прогон MLflow · когда `log_contract_artifacts(predictions, examples=…, data_version=…)` · тогда таблицы записаны в `mlreview/*.parquet` без индекса, версия данных — в тег; `load_mlflow_contract` по этому прогону возвращает таблицы, равные исходным.
+- B7. Дано: эксперимент с завершёнными и незавершёнными прогонами · когда `finished_runs(эксперимент, tracking_uri=…)` · тогда id прогонов со статусом `FINISHED` по времени окончания (для проактивного режима, `docs/specs/proactive.md`); эксперимента нет — ошибка «эксперимент <имя> не найден».
 
 ### Команда проверки
 
@@ -44,7 +45,7 @@ contract = load_mlflow_contract(spec, run_id, tracking_uri="sqlite:///mlflow.db"
 
 ## Деградация и ошибки
 
-Ошибки чтения прогона — `MlflowAdapterError` с сообщением по-русски, где есть id прогона; ошибки содержимого контракта — `RunContractError` из ядра без изменений (все проблемы с путями полей).
+Ошибки чтения прогона — `MlflowAdapterError` (подкласс общего `AdapterError`) с сообщением по-русски, где есть id прогона; ошибки содержимого контракта — `RunContractError` из ядра без изменений (все проблемы с путями полей).
 
 - E1. Дано: пакет `mlflow` не установлен · когда вызов адаптера или команды · тогда ошибка с подсказкой `pip install "mlreview[mlflow]"`, а не `ImportError`; остальные команды CLI работают.
 - E2. Дано: прогона с таким id нет или трекер недоступен · тогда ошибка «прогон <id> не получен из <адрес трекера>» с причиной от MLflow.
@@ -56,13 +57,13 @@ contract = load_mlflow_contract(spec, run_id, tracking_uri="sqlite:///mlflow.db"
 
 ## Вне рамок
 
-- Версия и хеш датасета из `mlflow.log_input` (FR-C04, L1), поиск прогонов и выбор референса по эксперименту (S02, L1), проактивный запуск по завершению прогона (FR-R04, L1).
-- Адаптеры локальных файлов (FR-C03, L1) и W&B (FR-C03, L2).
+- Версия и хеш датасета из `mlflow.log_input` (хеш данных считается по содержимому контракта — `docs/specs/data-version.md`).
+- Адаптер W&B (FR-C03, L2); адаптер локальных файлов — `docs/specs/files-adapter.md`.
 - Модели и другие артефакты MLflow, результаты `mlflow.evaluate`.
-- Несколько сидов в одном прогоне и вложенные прогоны (FR-D05, L1).
+- Несколько сидов в одном прогоне и вложенные прогоны (сиды — отдельные прогоны, `docs/specs/seeds.md`).
 
 ## Тесты
 
-- B1–B6, E1–E7 → `tests/test_mlflow_adapter.py` (прогоны создаются в локальном sqlite-трекере во временном каталоге; без установленного `mlflow` тесты адаптера пропускаются, кроме E1)
+- B1–B6, E1–E7 → `tests/test_mlflow_adapter.py`; B7 → `tests/test_watch.py` (прогоны создаются в локальном sqlite-трекере во временном каталоге; без установленного `mlflow` тесты адаптера пропускаются, кроме E1)
 - C1–C3 → `tests/test_cli.py`
 - Ручная проверка с `mlflow server` → `docs/manual-testing/mlflow-adapter.md`
