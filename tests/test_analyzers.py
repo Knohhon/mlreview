@@ -68,7 +68,8 @@ def test_failing_analyzer_is_reported(custom):
 
 def test_unknown_group():
     """B3: неизвестная группа."""
-    with pytest.raises(ValueError, match="допустимо: data, segments, metrics, model, curves, process"):
+    allowed = "допустимо: data, segments, metrics, model, curves, process"
+    with pytest.raises(ValueError, match=allowed):
         review(binary_spec(), binary_contract(), groups=("nope",))
 
 

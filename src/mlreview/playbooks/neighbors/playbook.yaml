@@ -12,3 +12,23 @@ params:
   weights: {aliases: [weights]}
   metric: {aliases: [metric]}
   p: {aliases: [p]}
+thresholds:
+  scale_ratio: 10    # max/min стандартного отклонения признаков на train
+  small_k: 2         # n_neighbors не больше — слишком мало соседей
+  extreme_share: 0.9 # доля вероятностей ровно 0 или 1 — вероятности вырождены
+checks:
+  neighbors.unscaled_features:
+    suggestion: >-
+      масштабировать признаки внутри пайплайна, обученного только на train (StandardScaler
+      или RobustScaler перед kNN); различающий эксперимент — тот же k с масштабированием:
+      если метрика заметно меняется, расстояния определял признак с наибольшим масштабом
+  neighbors.small_k:
+    suggestion: >-
+      подобрать k на валидации (например, 5, 15, 31) при фиксированном сплите, для
+      вероятностей — weights: distance или k побольше; различающий эксперимент — тот же
+      пайплайн с k = 15: если метрика на test растёт, k = 1 запоминал шум
+overrides:
+  calibration.ece: >-
+    вероятности kNN — доли соседей одного класса, при малом k они грубые: увеличить k или
+    взять weights: distance, затем откалибровать на отложенной выборке (isotonic или Platt,
+    CalibratedClassifierCV); различающий эксперимент — ECE того же k до и после калибровки

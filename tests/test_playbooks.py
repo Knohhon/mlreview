@@ -302,8 +302,9 @@ def test_diagnose_model_command(tmp_path, capsys, monkeypatch):
     assert "диагностика модели прогона" in capsys.readouterr().out
     assert main(["diagnose", "model", "run", "--spec", "task.yaml", "--format", "json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert [f["check"] for f in data["findings"]] == ["demo.check"]
-    assert [s["check"] for s in data["skipped"]] == ["demo.skipped"]
+    checks = [f["check"] for f in data["findings"]] + [s["check"] for s in data["skipped"]]
+    assert {"demo.check", "demo.skipped"} <= set(checks)
+    assert all(check.startswith(("demo.", "neighbors.", "model")) for check in checks)
 
 
 def test_playbooks_list_command(capsys):
@@ -411,6 +412,5 @@ def test_failing_playbook_is_skipped(tmp_path, monkeypatch):
 
     report = review(binary_spec(), binary_contract(model=KNN), groups=("model",))
 
-    assert [(s.check, s.reason) for s in report.skipped] == [
-        ("playbook.demo", "ошибка анализатора: RuntimeError: сломано")
-    ]
+    failed = [(s.check, s.reason) for s in report.skipped if s.check.startswith("playbook.")]
+    assert failed == [("playbook.demo", "ошибка анализатора: RuntimeError: сломано")]

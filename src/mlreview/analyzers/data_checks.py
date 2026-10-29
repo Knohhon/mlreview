@@ -43,7 +43,8 @@ def _ordered_splits(splits: pd.Series) -> list[str]:
     return sorted(names, key=lambda name: (SPLIT_RANKS.get(name, len(SPLIT_RANKS)), name))
 
 
-def _features(spec: TaskSpec, examples: pd.DataFrame) -> list[str]:
+def feature_columns(spec: TaskSpec, examples: pd.DataFrame) -> list[str]:
+    """Признаки — колонки examples, кроме id, сплита, сегментов и колонки времени."""
     service = {"example_id", "split", *spec.task.segments}
     if spec.data and spec.data.time_column:
         service.add(spec.data.time_column)
@@ -263,7 +264,7 @@ def data_findings(spec: TaskSpec, contract: RunContract) -> CheckResults:
         for check in (DUPLICATES_CHECK, TEMPORAL_CHECK, STRONG_CHECK):
             results.skip(check, "нет examples")
         return results
-    features = _features(spec, examples)
+    features = feature_columns(spec, examples)
     single_split = examples["split"].nunique() < 2  # noqa: PLR2004
 
     if single_split:
