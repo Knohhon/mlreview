@@ -66,6 +66,8 @@ save_run_files(
 mlreview contract check runs/exp-002 --spec task.yaml     # или id прогона MLflow
 ```
 
+`mlreview diagnose model <прогон> --spec task.yaml` — проверки по семейству модели; список плейбуков — `mlreview playbooks list`.
+
 ## 5. Первое ревью
 
 ```bash
