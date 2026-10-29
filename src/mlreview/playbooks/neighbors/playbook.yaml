@@ -1,0 +1,14 @@
+# Метрические методы: kNN и радиусные соседи.
+id: neighbors
+title: Метрические методы (kNN)
+requirement: FR-D11
+applies_to:
+  families: [neighbors]
+  task_types: [classification/binary, classification/multiclass, regression]
+detect:
+  neighbors: [KNeighbors*, RadiusNeighbors*, NearestCentroid]
+params:
+  n_neighbors: {aliases: [n_neighbors, k]}
+  weights: {aliases: [weights]}
+  metric: {aliases: [metric]}
+  p: {aliases: [p]}

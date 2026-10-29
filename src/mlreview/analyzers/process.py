@@ -1,7 +1,8 @@
 """Логические проверки процесса: разные данные, несколько изменений, валидация (FR-D06).
 
 Ловит дефекты бенчмарка B07 (сравнение на разных версиях данных) и B11 (несколько
-изменений в одном эксперименте). Поведение зафиксировано в `docs/specs/process-checks.md`.
+изменений в одном эксперименте). Смена семейства модели — одно изменение `model` (FR-D11).
+Поведение зафиксировано в `docs/specs/process-checks.md` и `docs/specs/playbooks.md` (B15).
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from typing import Any
 from mlreview.analyzers.registry import ReviewContext
 from mlreview.core.findings import CheckResults, Finding
 from mlreview.core.run_contract import RunContract
+from mlreview.playbooks import loader
+from mlreview.playbooks.resolve import alias_keys, resolve_family
 
 SEED_KEYS = frozenset({"seed", "random_state", "random_seed", "rng_seed"})
 MIN_CHANGES = 2
@@ -81,8 +84,27 @@ def _data_mismatch(candidate: RunContract, baseline: RunContract) -> Finding | N
     return Finding(VERSION_CHECK, "high", message, "FR-D06, B07", (), facts, suggestion)
 
 
-def _multiple_changes(candidate: RunContract, baseline: RunContract) -> Finding | None:
+def _model_changes(candidate: RunContract, baseline: RunContract) -> list[tuple[str, str, str]]:
+    """Изменения конфига; смена семейства модели — одно изменение `model` (B15).
+
+    При смене семейства ключи одной стороны и гиперпараметры, распознанные алиасами
+    плейбуков обоих семейств, относятся к смене модели и отдельно не считаются.
+    """
     changes = config_changes(baseline.config, candidate.config)
+    before, after = resolve_family(baseline.model), resolve_family(candidate.model)
+    if before is None or after is None or before == after:
+        return changes
+    model_keys = set(flatten(baseline.config)) ^ set(flatten(candidate.config))
+    for playbook in loader.builtin_playbooks():
+        if {before, after} & set(playbook.manifest.applies_to.families):
+            model_keys |= alias_keys(baseline.config, playbook)
+            model_keys |= alias_keys(candidate.config, playbook)
+    kept = [change for change in changes if change[0] not in model_keys]
+    return sorted([*kept, ("model", before, after)])
+
+
+def _multiple_changes(candidate: RunContract, baseline: RunContract) -> Finding | None:
+    changes = _model_changes(candidate, baseline)
     if len(changes) < MIN_CHANGES:
         return None
     shown = ", ".join(f"{key} ({before} → {after})" for key, before, after in changes)

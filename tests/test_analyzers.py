@@ -33,7 +33,7 @@ def custom():
 
 def test_groups_order():
     """Порядок групп."""
-    assert GROUPS == ("data", "segments", "metrics", "curves", "process")
+    assert GROUPS == ("data", "segments", "metrics", "model", "curves", "process")
 
 
 def test_registered_analyzer_runs_after_builtin(custom):
@@ -68,7 +68,7 @@ def test_failing_analyzer_is_reported(custom):
 
 def test_unknown_group():
     """B3: неизвестная группа."""
-    with pytest.raises(ValueError, match="допустимо: data, segments, metrics, curves, process"):
+    with pytest.raises(ValueError, match="допустимо: data, segments, metrics, model, curves, process"):
         review(binary_spec(), binary_contract(), groups=("nope",))
 
 

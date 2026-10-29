@@ -280,7 +280,7 @@ def test_contract_check_shows_model(tmp_path, capsys):
     out = capsys.readouterr().out
     assert (
         "модель: sklearn.tree.DecisionTreeClassifier "
-        "(семейство: не указано, источник: explicit)" in out
+        "(семейство: tree (по классу), источник: explicit)" in out
     )
     assert "важностей признаков: 2" in out
     assert main(["contract", "check", str(tmp_path / "exp-2"), "--spec", str(spec)]) == 0

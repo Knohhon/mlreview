@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from mlreview import __version__
-from mlreview.cli import journal, llm, metrics, review, store, watch
+from mlreview.cli import journal, llm, metrics, playbooks, review, store, watch
 from mlreview.cli.common import ERRORS
 from mlreview.reporting import render_report
 
@@ -20,10 +20,11 @@ __all__ = ["COMMANDS", "build_parser", "main", "render_report"]
 COMMANDS: dict[str, str] = {
     "review": "ревью прогона или сравнение прогонов",
     "metrics": "проектирование и проверка метрик",
-    "diagnose": "диагностика данных, сегментов и кривых обучения",
+    "diagnose": "диагностика данных, сегментов, модели и кривых обучения",
     "ask": "вопрос по истории проекта и находкам",
     "spec": "работа со спецификацией задачи",
     "contract": "проверка контракта прогона",
+    "playbooks": "плейбуки по семействам моделей",
     "init": "создать рабочее пространство .mlreview в проекте",
     "findings": "находки хранилища и их статусы",
     "dismiss": "отметить находку как неважную",
@@ -40,6 +41,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "ask": llm.run_ask,
     "spec": review.run_spec,
     "contract": review.run_contract,
+    "playbooks": playbooks.run_playbooks,
     "init": store.run_init,
     "findings": store.run_findings,
     "dismiss": store.run_dismiss,
@@ -54,6 +56,7 @@ ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
     "ask": llm.add_ask_arguments,
     "spec": review.add_spec_actions,
     "contract": review.add_contract_actions,
+    "playbooks": playbooks.add_playbooks_actions,
     "init": store.add_init_arguments,
     "findings": store.add_findings_actions,
     "dismiss": store.add_dismiss_arguments,

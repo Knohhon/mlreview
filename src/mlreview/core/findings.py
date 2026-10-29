@@ -135,6 +135,7 @@ class Report:
     baseline_data_hash: str | None = None
     candidate_seeds: tuple[str, ...] = ()
     baseline_seeds: tuple[str, ...] = ()
+    model: Mapping[str, str | None] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -147,6 +148,7 @@ class Report:
             "compared_examples": self.compared_examples,
             "candidate_seeds": list(self.candidate_seeds),
             "baseline_seeds": list(self.baseline_seeds),
+            "model": None if self.model is None else dict(self.model),
             "findings": [finding.to_dict() for finding in self.findings],
             "skipped": [skipped.to_dict() for skipped in self.skipped],
             "llm": None,

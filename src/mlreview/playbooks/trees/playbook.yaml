@@ -1,0 +1,30 @@
+# Деревья решений и ансамбли деревьев: sklearn, LightGBM, XGBoost, CatBoost.
+id: trees
+title: Деревья решений и ансамбли деревьев
+requirement: FR-D11
+applies_to:
+  families: [tree, ensemble/bagging, ensemble/boosting]
+  task_types: [classification/binary, classification/multiclass, regression]
+detect:
+  tree: [DecisionTreeClassifier, DecisionTreeRegressor, ExtraTreeClassifier, ExtraTreeRegressor]
+  ensemble/bagging:
+    - RandomForest*
+    - ExtraTreesClassifier
+    - ExtraTreesRegressor
+    - Bagging*
+  ensemble/boosting:
+    - GradientBoosting*
+    - HistGradientBoosting*
+    - AdaBoost*
+    - LGBM*
+    - XGB*
+    - CatBoost*
+params:
+  # null — без ограничения в sklearn и XGBoost, -1 — в LightGBM; depth — CatBoost
+  max_depth: {aliases: [max_depth, depth], unbounded: [null, -1]}
+  min_samples_leaf: {aliases: [min_samples_leaf, min_child_samples, min_data_in_leaf]}
+  max_leaf_nodes: {aliases: [max_leaf_nodes, num_leaves, max_leaves], unbounded: [null, 0]}
+  n_estimators:
+    aliases: [n_estimators, num_iterations, num_boost_round, iterations, max_iter]
+  learning_rate: {aliases: [learning_rate, eta]}
+  ccp_alpha: {aliases: [ccp_alpha]}

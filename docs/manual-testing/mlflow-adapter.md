@@ -288,7 +288,7 @@ mlreview contract check "$(cat run_id_tree.txt)" --spec task.yaml | grep мод�
 mlreview contract check "$(cat run_id_knn.txt)" --spec task.yaml | grep модель
 ```
 
-Ожидается: `модель: sklearn.tree._classes.DecisionTreeClassifier (семейство: не указано, источник: autolog)` и `модель: KNeighborsClassifier (семейство: не указано, источник: pipeline)`. Семейство по классу определяют плейбуки (`docs/specs/playbooks.md`); после их появления здесь будут `tree` и `neighbors`.
+Ожидается: `модель: sklearn.tree._classes.DecisionTreeClassifier (семейство: tree (по классу), источник: autolog)` и `модель: KNeighborsClassifier (семейство: neighbors (по классу), источник: pipeline)`; семейство по классу определяют плейбуки (`docs/specs/playbooks.md`).
 
 ## 3. Уборка
 

@@ -1,0 +1,30 @@
+# Линейные модели: только распознавание семейства (проверок пока нет).
+id: linear
+title: Линейные модели
+requirement: FR-D11
+applies_to:
+  families: [linear]
+detect:
+  linear:
+    - LinearRegression
+    - LogisticRegression*
+    - Ridge*
+    - Lasso*
+    - ElasticNet*
+    - Lars*
+    - OrthogonalMatchingPursuit*
+    - BayesianRidge
+    - ARDRegression
+    - HuberRegressor
+    - QuantileRegressor
+    - TheilSenRegressor
+    - RANSACRegressor
+    - PoissonRegressor
+    - GammaRegressor
+    - TweedieRegressor
+    - SGDClassifier
+    - SGDRegressor
+    - Perceptron
+    - PassiveAggressive*
+    - LinearSVC
+    - LinearSVR
