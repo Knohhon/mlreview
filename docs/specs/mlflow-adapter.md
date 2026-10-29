@@ -24,6 +24,8 @@ contract = load_mlflow_contract(spec, run_id, tracking_uri="sqlite:///mlflow.db"
 | `config` | параметры прогона (`log_param`), значения — строки, как их хранит MLflow |
 | `curves` | история метрик (`log_metric` со `step`): метрики, у которых не меньше двух точек, в формате `name`, `step`, `value`, отсортированные по `name` и `step`; метрика с одной точкой — итоговое число, а не кривая |
 | `data_version` | тег `mlreview.data_version` |
+| `model` | теги `mlreview.model.class`/`family`/`library`; без них — тег `estimator_class` автологирования sklearn, у `Pipeline` — последний шаг из параметра `steps` (`docs/specs/model-info.md`, M1–M4) |
+| `feature_importance` | артефакт `feature_importance.parquet` или `feature_importance.csv` в каталоге артефактов `mlreview` |
 
 В CSV колонка `example_id` читается как строка (id `007` не превращается в `7`), в остальном типы выводит pandas.
 
@@ -32,7 +34,7 @@ contract = load_mlflow_contract(spec, run_id, tracking_uri="sqlite:///mlflow.db"
 - B1. Дано: прогон с параметрами, историей метрик, тегом `mlreview.data_version` и артефактами `predictions.parquet`, `examples.parquet` · когда `load_mlflow_contract(spec, run_id, tracking_uri=…)` · тогда `RunContract` с `run_id` прогона, `config` из параметров, `curves` из истории метрик, `data_version` из тега и таблицами, равными залогированным.
 - B2. Дано: те же таблицы в CSV · тогда контракт тот же; `example_id` в `predictions` и `examples` — строки, `007` остаётся `007`.
 - B3. Дано: метрика `auc` с одной точкой и `train_loss` с тремя · тогда в `curves` только `train_loss`; если кривых нет совсем — `curves` равно `None`, и контракт сообщает пробел `curves` (X1).
-- B4. Дано: в прогоне только артефакт предсказаний · тогда контракт валиден, `gaps` перечисляет `examples`, `curves`, `config`, `data_version`.
+- B4. Дано: в прогоне только артефакт предсказаний · тогда контракт валиден, `gaps` перечисляет `examples`, `curves`, `config`, `data_version`, `model`.
 - B5. Дано: `tracking_uri` не передан · тогда используется адрес трекера по умолчанию MLflow (переменная окружения `MLFLOW_TRACKING_URI`).
 - B6. Дано: активный прогон MLflow · когда `log_contract_artifacts(predictions, examples=…, data_version=…)` · тогда таблицы записаны в `mlreview/*.parquet` без индекса, версия данных — в тег; `load_mlflow_contract` по этому прогону возвращает таблицы, равные исходным.
 - B7. Дано: эксперимент с завершёнными и незавершёнными прогонами · когда `finished_runs(эксперимент, tracking_uri=…)` · тогда id прогонов со статусом `FINISHED` по времени окончания (для проактивного режима, `docs/specs/proactive.md`); эксперимента нет — ошибка «эксперимент <имя> не найден».
@@ -59,11 +61,11 @@ contract = load_mlflow_contract(spec, run_id, tracking_uri="sqlite:///mlflow.db"
 
 - Версия и хеш датасета из `mlflow.log_input` (хеш данных считается по содержимому контракта — `docs/specs/data-version.md`).
 - Адаптер W&B (FR-C03, L2); адаптер локальных файлов — `docs/specs/files-adapter.md`.
-- Модели и другие артефакты MLflow, результаты `mlflow.evaluate`.
+- Сами модели (`MLmodel`, flavors) и другие артефакты MLflow, результаты `mlflow.evaluate`; о модели читаются только теги и параметр `steps`.
 - Несколько сидов в одном прогоне и вложенные прогоны (сиды — отдельные прогоны, `docs/specs/seeds.md`).
 
 ## Тесты
 
-- B1–B6, E1–E7 → `tests/test_mlflow_adapter.py`; B7 → `tests/test_watch.py` (прогоны создаются в локальном sqlite-трекере во временном каталоге; без установленного `mlflow` тесты адаптера пропускаются, кроме E1)
+- B1–B6, E1–E7 и M1–M6 (`docs/specs/model-info.md`) → `tests/test_mlflow_adapter.py`; B7 → `tests/test_watch.py` (прогоны создаются в локальном sqlite-трекере во временном каталоге; без установленного `mlflow` тесты адаптера пропускаются, кроме E1)
 - C1–C3 → `tests/test_cli.py`
 - Ручная проверка с `mlflow server` → `docs/manual-testing/mlflow-adapter.md`

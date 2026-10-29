@@ -46,6 +46,16 @@ def add_contract_actions(parser: argparse.ArgumentParser) -> None:
     add_tracking_argument(check)
 
 
+def _model_line(contract: RunContract) -> str:
+    """Модель прогона для сводки контракта (FR-C07)."""
+    model = contract.model
+    if model is None:
+        return "модель: не указана"
+    family = model.family or "не указано"
+    name = model.class_name or "класс не указан"
+    return f"модель: {name} (семейство: {family}, источник: {model.source})"
+
+
 def _contract_summary(contract: RunContract) -> list[str]:
     examples = contract.examples
     if examples is None:
@@ -62,7 +72,10 @@ def _contract_summary(contract: RunContract) -> list[str]:
         f"  параметров: {len(contract.config)}",
         f"  версия данных: {contract.data_version or 'нет'}",
         f"  хеш данных: {contract.data_hash}",
+        f"  {_model_line(contract)}",
     ]
+    if contract.feature_importance is not None:
+        lines.append(f"  важностей признаков: {len(contract.feature_importance)}")
     lines += [f"  нет {gap.field} — недоступно: {gap.purpose}" for gap in contract.gaps]
     return lines
 

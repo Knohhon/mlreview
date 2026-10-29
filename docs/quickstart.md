@@ -56,10 +56,11 @@ save_run_files(
     config={"C": 1.0, "features": "all"},
     curves=curves,  # DataFrame: name, step, value — например train_loss, val_loss
     data_version="ds-v1",
+    model={"class": "sklearn.linear_model.LogisticRegression"},  # что за модель (FR-C07)
 )
 ```
 
-С MLflow — внутри `mlflow.start_run()`: `from mlreview.adapters.mlflow_adapter import log_contract_artifacts; log_contract_artifacts(predictions, examples=examples, data_version="ds-v1")`; параметры и метрики прогона MLflow становятся конфигом и кривыми. Проверка контракта:
+С MLflow — внутри `mlflow.start_run()`: `from mlreview.adapters.mlflow_adapter import log_contract_artifacts; log_contract_artifacts(predictions, examples=examples, data_version="ds-v1", model={"class": "sklearn.linear_model.LogisticRegression"})`; параметры и метрики прогона MLflow становятся конфигом и кривыми. При автологировании sklearn (`mlflow.sklearn.autolog()`) модель определяется сама — по тегу `estimator_class`, у `Pipeline` — по последнему шагу. Проверка контракта:
 
 ```bash
 mlreview contract check runs/exp-002 --spec task.yaml     # или id прогона MLflow

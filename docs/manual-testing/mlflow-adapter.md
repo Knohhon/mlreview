@@ -1,6 +1,6 @@
 # Ручная проверка адаптера MLflow
 
-Опора: FR-C03, FR-C02, FR-R01, FR-R04; спецификация поведения — `docs/specs/mlflow-adapter.md`.
+Опора: FR-C03, FR-C02, FR-C07, FR-R01, FR-R04; спецификация поведения — `docs/specs/mlflow-adapter.md`.
 
 Автотесты (`tests/test_mlflow_adapter.py`) проверяют адаптер на локальном sqlite-трекере при заблокированной сети. Этот путь закрывает то, что автотесты не видят:
 
@@ -8,7 +8,8 @@
 - живой скрипт обучения (линейная модель sklearn), который логирует контракт через `log_contract_artifacts`;
 - недоступный сервер трекинга и время до ошибки;
 - установка без extra `mlflow`;
-- проактивное ревью по эксперименту на настоящем сервере (`mlreview watch --experiment`).
+- проактивное ревью по эксперименту на настоящем сервере (`mlreview watch --experiment`);
+- модель из автологирования sklearn: дерево и kNN в `Pipeline` (`docs/specs/model-info.md`).
 
 Занимает 10–15 минут. Результаты записываются в журнал в конце файла.
 
@@ -105,6 +106,7 @@ with mlflow.start_run() as run:
         predictions,
         examples=None if args.no_examples else examples,
         data_version="breast-cancer-v1",
+        model={"class": "sklearn.linear_model.SGDClassifier", "family": "linear"},
     )
 
 Path("run_id.txt").write_text(run.info.run_id, encoding="utf-8")
@@ -144,10 +146,11 @@ python train.py && mlreview contract check "$(cat run_id.txt)" --spec task.yaml;
   параметров: 4
   версия данных: breast-cancer-v1
   хеш данных: sha256:<16 hex>
+  модель: sklearn.linear_model.SGDClassifier (семейство: linear, источник: tag)
 exit=0
 ```
 
-В UI (http://127.0.0.1:5000) у прогона: параметры `loss`, `alpha`, `epochs`, `random_state`; графики `train_loss` и `val_loss` по 10 шагов; тег `mlreview.data_version`; в артефактах каталог `mlreview` с файлами `predictions.parquet` и `examples.parquet`.
+В UI (http://127.0.0.1:5000) у прогона: параметры `loss`, `alpha`, `epochs`, `random_state`; графики `train_loss` и `val_loss` по 10 шагов; теги `mlreview.data_version`, `mlreview.model.class`, `mlreview.model.family`; в артефактах каталог `mlreview` с файлами `predictions.parquet` и `examples.parquet`.
 
 ### M2. Сегмента нет в примерах (G2, X1)
 
@@ -236,6 +239,57 @@ bare/bin/mlreview spec validate task.yaml; echo "exit=$?"
 
 Ожидается: `contract check` — код 1 и `адаптер MLflow требует пакет mlflow: pip install "mlreview[mlflow]"`; `spec validate` — код 0 (остальные команды без mlflow работают).
 
+### M10. Модель из автологирования sklearn (FR-C07; `docs/specs/model-info.md` M2, M3)
+
+Сервер ещё работает; в том же `$WORK` — `autolog.py`:
+
+```python
+"""Прогоны с автологированием sklearn: дерево и kNN в Pipeline; таблицы — через mlreview."""
+
+from pathlib import Path
+
+import mlflow
+import pandas as pd
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier
+
+from mlreview.adapters.mlflow_adapter import log_contract_artifacts
+
+data = load_breast_cancer(as_frame=True)
+frame = data.frame.assign(example_id=[f"bc-{i:03d}" for i in range(len(data.frame))])
+features = list(data.feature_names)
+train, test = train_test_split(frame, test_size=0.3, random_state=0, stratify=frame["target"])
+mlflow.set_experiment("mlreview-autolog")
+mlflow.sklearn.autolog(log_models=False, log_datasets=False)
+for name, model in (
+    ("tree", DecisionTreeClassifier(max_depth=4, random_state=0)),
+    ("knn", make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5))),
+):
+    with mlflow.start_run() as run:
+        model.fit(train[features], train["target"])
+        predictions = pd.DataFrame(
+            {
+                "example_id": test["example_id"],
+                "label": test["target"],
+                "prediction": model.predict_proba(test[features])[:, 1],
+            }
+        )
+        log_contract_artifacts(predictions)
+    Path(f"run_id_{name}.txt").write_text(run.info.run_id, encoding="utf-8")
+```
+
+```bash
+python autolog.py
+mlreview contract check "$(cat run_id_tree.txt)" --spec task.yaml | grep модель
+mlreview contract check "$(cat run_id_knn.txt)" --spec task.yaml | grep модель
+```
+
+Ожидается: `модель: sklearn.tree._classes.DecisionTreeClassifier (семейство: не указано, источник: autolog)` и `модель: KNeighborsClassifier (семейство: не указано, источник: pipeline)`. Семейство по классу определяют плейбуки (`docs/specs/playbooks.md`); после их появления здесь будут `tree` и `neighbors`.
+
 ## 3. Уборка
 
 ```bash
@@ -244,7 +298,7 @@ cd ~ && rm -rf "$WORK"
 
 ## Журнал прогонов
 
-| Дата | Python | MLflow | sklearn | M1 | M2 | M3 | M4 | M5 | M6 | M7 (по умолчанию / без повторов) | M8 | M9 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-08 | 3.14.0 | 3.16.1 | 1.9.1 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ 249 с / 1 с | ✓ | — |
-| 2026-10-15 | 3.14.0 | 3.16.1 | 1.9.1 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ 248 с / 2 с | ✓ | ✓ |
+| Дата | Python | MLflow | sklearn | M1 | M2 | M3 | M4 | M5 | M6 | M7 (по умолчанию / без повторов) | M8 | M9 | M10 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-08 | 3.14.0 | 3.16.1 | 1.9.1 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ 249 с / 1 с | ✓ | — | — |
+| 2026-10-15 | 3.14.0 | 3.16.1 | 1.9.1 | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ 248 с / 2 с | ✓ | ✓ | — |

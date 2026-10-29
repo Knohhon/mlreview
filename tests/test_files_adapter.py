@@ -33,7 +33,11 @@ def _write_parquet_run(path, *, config=None, meta=None):
     examples.to_parquet(path / "examples.parquet", index=False)
     CURVES.to_parquet(path / "curves.parquet", index=False)
     (path / "config.yaml").write_text(yaml.safe_dump(config or {"lr": 0.01}), encoding="utf-8")
-    meta = {"run_id": "exp-1", "data_version": "v1"} if meta is None else meta
+    meta = (
+        {"run_id": "exp-1", "data_version": "v1", "model": {"family": "linear"}}
+        if meta is None
+        else meta
+    )
     (path / "run.yaml").write_text(yaml.safe_dump(meta), encoding="utf-8")
     return predictions, examples
 
@@ -79,7 +83,13 @@ def test_only_predictions_uses_directory_name(tmp_path):
     predictions.to_csv(run / "predictions.csv", index=False)
     contract = load_files_contract(binary_spec(), run)
     assert contract.run_id == "bare"
-    assert [gap.field for gap in contract.gaps] == ["examples", "curves", "config", "data_version"]
+    assert [gap.field for gap in contract.gaps] == [
+        "examples",
+        "curves",
+        "config",
+        "data_version",
+        "model",
+    ]
 
 
 def test_save_run_files_roundtrip(tmp_path):
@@ -214,3 +224,64 @@ def test_invalid_contract_is_reported_by_core(tmp_path):
     predictions.drop(columns="label").to_parquet(run / "predictions.parquet", index=False)
     with pytest.raises(RunContractError, match=r"predictions\.label"):
         load_files_contract(binary_spec(), run)
+
+
+# --- Сведения о модели (docs/specs/model-info.md) ------------------------------------------------
+
+IMPORTANCE = pd.DataFrame({"feature": ["f0", "size"], "importance": [0.9, 0.1]})
+
+
+def test_model_and_importance_from_directory(tmp_path):
+    """F1: model из run.yaml и feature_importance.csv попадают в контракт."""
+    meta = {"run_id": "exp-1", "model": {"class": "sklearn.tree.DecisionTreeClassifier"}}
+    _write_parquet_run(tmp_path / "exp-1", meta=meta)
+    IMPORTANCE.to_csv(tmp_path / "exp-1" / "feature_importance.csv", index=False)
+
+    contract = load_files_contract(binary_spec(), tmp_path / "exp-1")
+
+    assert contract.model.class_name == "sklearn.tree.DecisionTreeClassifier"
+    assert (contract.model.library, contract.model.source) == ("sklearn", "explicit")
+    pd.testing.assert_frame_equal(contract.feature_importance, IMPORTANCE)
+
+
+def test_save_run_files_writes_model_and_importance(tmp_path):
+    """F2: save_run_files пишет model в run.yaml и важности в parquet; чтение их возвращает."""
+    predictions, examples = binary_tables()
+    run = tmp_path / "exp-4"
+    save_run_files(
+        run,
+        predictions,
+        examples=examples,
+        model={"class": "KNeighborsClassifier", "family": "neighbors"},
+        feature_importance=IMPORTANCE,
+    )
+
+    meta = yaml.safe_load((run / "run.yaml").read_text(encoding="utf-8"))
+    assert meta["model"] == {"class": "KNeighborsClassifier", "family": "neighbors"}
+    assert (run / "feature_importance.parquet").is_file()
+    contract = load_files_contract(binary_spec(), run)
+    assert (contract.model.class_name, contract.model.family) == (
+        "KNeighborsClassifier",
+        "neighbors",
+    )
+    pd.testing.assert_frame_equal(contract.feature_importance, IMPORTANCE)
+
+
+def test_contract_check_shows_model(tmp_path, capsys):
+    """C1: contract check показывает модель и число важностей; без модели — «не указана»."""
+    meta = {"run_id": "exp-1", "model": {"class": "sklearn.tree.DecisionTreeClassifier"}}
+    _write_parquet_run(tmp_path / "exp-1", meta=meta)
+    IMPORTANCE.to_parquet(tmp_path / "exp-1" / "feature_importance.parquet", index=False)
+    _write_parquet_run(tmp_path / "exp-2", meta={"run_id": "exp-2"})
+    spec = tmp_path / "task.yaml"
+    spec.write_text("task: {type: classification/binary, output: probabilities}\n", "utf-8")
+
+    assert main(["contract", "check", str(tmp_path / "exp-1"), "--spec", str(spec)]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "модель: sklearn.tree.DecisionTreeClassifier "
+        "(семейство: не указано, источник: explicit)" in out
+    )
+    assert "важностей признаков: 2" in out
+    assert main(["contract", "check", str(tmp_path / "exp-2"), "--spec", str(spec)]) == 0
+    assert "модель: не указана" in capsys.readouterr().out

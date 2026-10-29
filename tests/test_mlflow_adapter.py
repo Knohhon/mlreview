@@ -60,7 +60,7 @@ def test_full_run_becomes_contract(mlflow_store):
         artifacts={"predictions.parquet": _predictions(), "examples.parquet": _examples()},
         params={"C": "1.0", "penalty": "l2"},
         metrics={"val_loss": [0.8, 0.6, 0.65], "train_loss": [0.7, 0.5, 0.4], "auc": [0.9]},
-        tags={"mlreview.data_version": "ds-v3"},
+        tags={"mlreview.data_version": "ds-v3", "mlreview.model.family": "linear"},
     )
 
     contract = _load(mlflow_store, run_id)
@@ -128,7 +128,7 @@ def test_predictions_only_run(mlflow_store):
 
     contract = _load(mlflow_store, run_id)
 
-    assert _gap_fields(contract) == ["examples", "curves", "config", "data_version"]
+    assert _gap_fields(contract) == ["examples", "curves", "config", "data_version", "model"]
 
 
 def test_default_tracking_uri_from_environment(mlflow_store, monkeypatch):
@@ -269,3 +269,128 @@ def test_log_requires_active_run(mlflow_store, monkeypatch):
     assert "нет активного прогона" in str(exc.value)
     runs = mlflow_store.client.search_runs([mlflow_store.experiment_id, "0"])
     assert runs == []
+
+
+# --- Сведения о модели (docs/specs/model-info.md) ------------------------------------------------
+
+IMPORTANCE = pd.DataFrame({"feature": ["language"], "importance": [1.0]})
+PIPELINE_STEPS = "[('scaler', StandardScaler()), ('knn', KNeighborsClassifier(n_neighbors=3))]"
+
+
+def test_model_from_mlreview_tags(mlflow_store):
+    """M1: теги mlreview.model.* → model с источником tag."""
+    run_id = mlflow_store.run(
+        artifacts={"predictions.parquet": _predictions()},
+        tags={
+            "mlreview.model.class": "LGBMClassifier",
+            "mlreview.model.family": "ensemble/boosting",
+            "mlreview.model.library": "lightgbm",
+        },
+    )
+
+    model = _load(mlflow_store, run_id).model
+
+    assert model.to_dict() == {
+        "class": "LGBMClassifier",
+        "family": "ensemble/boosting",
+        "library": "lightgbm",
+        "source": "tag",
+    }
+
+
+def test_model_from_autolog_estimator_class(mlflow_store):
+    """M2: тег estimator_class автологирования sklearn → class_name, источник autolog."""
+    estimator = "sklearn.tree._classes.DecisionTreeRegressor"
+    run_id = mlflow_store.run(
+        artifacts={"predictions.parquet": _predictions()}, tags={"estimator_class": estimator}
+    )
+
+    model = _load(mlflow_store, run_id).model
+
+    assert (model.class_name, model.library, model.source) == (estimator, "sklearn", "autolog")
+    assert "model" not in _gap_fields(_load(mlflow_store, run_id))
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"steps": PIPELINE_STEPS}, ("KNeighborsClassifier", None, "pipeline")),
+        ({}, ("sklearn.pipeline.Pipeline", "sklearn", "autolog")),
+        ({"steps": "[...]"}, ("sklearn.pipeline.Pipeline", "sklearn", "autolog")),
+    ],
+)
+def test_model_from_pipeline_steps(mlflow_store, params, expected):
+    """M3: у Pipeline — класс последнего шага из steps; без разбора — сам Pipeline."""
+    run_id = mlflow_store.run(
+        artifacts={"predictions.parquet": _predictions()},
+        params=params,
+        tags={"estimator_class": "sklearn.pipeline.Pipeline"},
+    )
+
+    model = _load(mlflow_store, run_id).model
+
+    assert (model.class_name, model.library, model.source) == expected
+
+
+def test_mlreview_tags_override_autolog(mlflow_store):
+    """M4: теги mlreview.model.* важнее автологирования, недостающее — из него."""
+    run_id = mlflow_store.run(
+        artifacts={"predictions.parquet": _predictions()},
+        tags={
+            "estimator_class": "sklearn.ensemble._forest.RandomForestClassifier",
+            "mlreview.model.family": "ensemble/bagging",
+        },
+    )
+
+    model = _load(mlflow_store, run_id).model
+
+    assert model.to_dict() == {
+        "class": "sklearn.ensemble._forest.RandomForestClassifier",
+        "family": "ensemble/bagging",
+        "library": "sklearn",
+        "source": "tag",
+    }
+
+
+def test_feature_importance_artifact(mlflow_store):
+    """M5: артефакт feature_importance читается; два формата сразу — ошибка неоднозначности."""
+    run_id = mlflow_store.run(
+        artifacts={
+            "predictions.parquet": _predictions(),
+            "examples.parquet": _examples(),
+            "feature_importance.csv": IMPORTANCE,
+        }
+    )
+    pd.testing.assert_frame_equal(_load(mlflow_store, run_id).feature_importance, IMPORTANCE)
+
+    both = mlflow_store.run(
+        artifacts={
+            "predictions.parquet": _predictions(),
+            "feature_importance.csv": IMPORTANCE,
+            "feature_importance.parquet": IMPORTANCE,
+        }
+    )
+    with pytest.raises(MlflowAdapterError, match=r"feature_importance.*нескольких форматах"):
+        _load(mlflow_store, both)
+
+
+def test_logged_model_round_trip(mlflow_store, monkeypatch):
+    """M6: log_contract_artifacts пишет теги mlreview.model.* и важности; чтение их возвращает."""
+    import mlflow  # noqa: PLC0415 — mlflow есть, раз фикстура mlflow_store не пропустила тест
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", mlflow_store.uri)
+    with mlflow.start_run(experiment_id=mlflow_store.experiment_id) as run:
+        log_contract_artifacts(
+            _predictions(),
+            examples=_examples(),
+            model={"class": "sklearn.neighbors.KNeighborsClassifier", "family": "neighbors"},
+            feature_importance=IMPORTANCE,
+        )
+
+    run_id = run.info.run_id
+    tags = mlflow_store.client.get_run(run_id).data.tags
+    assert tags["mlreview.model.class"] == "sklearn.neighbors.KNeighborsClassifier"
+    assert tags["mlreview.model.family"] == "neighbors"
+    contract = _load(mlflow_store, run_id)
+    assert (contract.model.family, contract.model.source) == ("neighbors", "tag")
+    pd.testing.assert_frame_equal(contract.feature_importance, IMPORTANCE)

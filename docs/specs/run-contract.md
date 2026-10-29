@@ -13,6 +13,8 @@ contract = build_run_contract(
     config={"C": 1.0},  # необязательно: параметры прогона
     curves=curves,  # необязательно: DataFrame кривых обучения
     data_version="ds-v3",  # необязательно
+    model={"class": "sklearn.tree.DecisionTreeClassifier"},  # необязательно (FR-C07)
+    feature_importance=importances,  # необязательно (FR-C07)
 )
 contract.gaps  # чего не хватает и какие проверки из-за этого недоступны (X1)
 ```
@@ -50,13 +52,15 @@ contract.gaps  # чего не хватает и какие проверки и�
 
 **`data_version`** — строка; число приводится к строке, как в спецификации задачи.
 
+**`model`**, **`feature_importance`** — сведения о модели и важности признаков (FR-C07); формат и проверки — `docs/specs/model-info.md`.
+
 **`data_hash`** — вычисляется при сборке контракта: отпечаток `examples` и меток (FR-C04, `docs/specs/data-version.md`).
 
 ## Ожидаемое поведение
 
 - B1. Дано: спецификация `classification/binary · probabilities`, все поля контракта валидны · когда `build_run_contract(...)` · тогда возвращается `RunContract` с теми же `run_id`, `config`, `data_version` и таблицами, равными переданным (индекс таблиц сбрасывается в 0…n−1), а `gaps` пуст.
 - B2. Дано: каждая допустимая пара `task.type · task.output` из таблицы (кроме multilabel) с валидными для неё `predictions` · когда сборка · тогда контракт валиден.
-- B3. Дано: только `run_id` и `predictions` · когда сборка · тогда контракт валиден, `examples` и `curves` — `None`, `config` — пустой словарь, `data_version` — `None`.
+- B3. Дано: только `run_id` и `predictions` · когда сборка · тогда контракт валиден, `examples`, `curves`, `model` и `feature_importance` — `None`, `config` — пустой словарь, `data_version` — `None`.
 - B4. Дано: контракт собран, затем исходные DataFrame и словарь `config` изменены вызывающим кодом · тогда содержимое контракта не меняется (контракт хранит копии; это нужно для воспроизводимости фактов, NFR-05).
 - B5. Дано: `data_version=3` · тогда `contract.data_version == "3"`.
 
@@ -69,7 +73,8 @@ contract.gaps  # чего не хватает и какие проверки и�
 - G3. Дано: в спецификации `data.time_column`, а в `examples` такой колонки нет · тогда пробел `examples.<колонка>`, назначение «проверка временной утечки (FR-D03, B02)».
 - G4. Дано: в `examples` один сплит · тогда пробел `examples.split`, назначение «нужно не меньше двух сплитов: проверка дублей между сплитами (FR-D03, B01)».
 - G5. Дано: нет `curves` · тогда пробел `curves`, «анализ кривых обучения (FR-D04)»; нет `config` или он пуст · пробел `config`, «логические проверки процесса (FR-D06)»; нет `data_version` · пробел `data_version`, «сверка версий данных между прогонами (FR-C04, FR-D06)».
-- G6. Порядок пробелов: `examples`, `examples.<сегменты>` в порядке спецификации, `examples.<колонка времени>`, `examples.split`, `curves`, `config`, `data_version`.
+- G6. Порядок пробелов: `examples`, `examples.<сегменты>` в порядке спецификации, `examples.<колонка времени>`, `examples.split`, `curves`, `config`, `data_version`, `model`.
+- G7. Дано: нет `model` · тогда пробел `model`, «проверки по семейству модели (FR-D11)» (`docs/specs/model-info.md`).
 
 ## Деградация и ошибки
 

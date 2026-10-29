@@ -1,8 +1,9 @@
 """Контракт прогона: предсказания, метки, id и метаданные примеров, конфиг, кривые (FR-C02).
 
-Контракт — всё, что ядро знает о прогоне: модель и фреймворк остаются за адаптером (NFR-01).
-Формат предсказаний определяется спецификацией задачи (FR-C01). Поведение зафиксировано
-в `docs/specs/run-contract.md`; хеш данных (FR-C04) — в `docs/specs/data-version.md`.
+Контракт — всё, что ядро знает о прогоне: модель и фреймворк остаются за адаптером (NFR-01),
+в контракте только их описание (FR-C07). Формат предсказаний определяется спецификацией
+задачи (FR-C01). Поведение зафиксировано в `docs/specs/run-contract.md`; хеш данных (FR-C04) —
+в `docs/specs/data-version.md`, сведения о модели — в `docs/specs/model-info.md`.
 """
 
 from __future__ import annotations
@@ -16,6 +17,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from mlreview.core.model_info import (
+    ModelInfo,
+    importance_problems,
+    model_problems,
+    to_model_info,
+)
 from mlreview.core.task_spec import TaskSection, TaskSpec
 
 CLASS_PREFIX = "prediction:"
@@ -28,6 +35,7 @@ _SPLIT_PURPOSE = "нужно не меньше двух сплитов: пров
 _CURVES_PURPOSE = "анализ кривых обучения (FR-D04)"
 _CONFIG_PURPOSE = "логические проверки процесса (FR-D06)"
 _VERSION_PURPOSE = "сверка версий данных между прогонами (FR-C04, FR-D06)"
+_MODEL_PURPOSE = "проверки по семейству модели (FR-D11)"
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,8 @@ class RunContract:
     data_version: str | None
     gaps: list[ContractGap]
     data_hash: str = ""
+    model: ModelInfo | None = None
+    feature_importance: pd.DataFrame | None = None
 
 
 def _evidence(labels: pd.Series | pd.Index, noun: str = "id") -> str:
@@ -317,7 +327,7 @@ def _gaps(
     config: dict[str, Any],
     data_version: str | None,
 ) -> list[ContractGap]:
-    """Пробелы контракта в фиксированном порядке (G1–G6)."""
+    """Пробелы контракта в фиксированном порядке (G1–G6); пробел `model` (G7) — последний."""
     gaps = []
     if examples is None:
         gaps.append(ContractGap("examples", _EXAMPLES_PURPOSE))
@@ -411,6 +421,8 @@ def build_run_contract(  # noqa: PLR0913 — поля контракта пер�
     config: Mapping[str, Any] | None = None,
     curves: pd.DataFrame | None = None,
     data_version: str | None = None,
+    model: ModelInfo | Mapping[str, Any] | None = None,
+    feature_importance: pd.DataFrame | None = None,
 ) -> RunContract:
     """Собирает контракт прогона и проверяет его против спецификации задачи.
 
@@ -435,6 +447,13 @@ def build_run_contract(  # noqa: PLR0913 — поля контракта пер�
         data_version = str(data_version)
     if data_version is not None and not isinstance(data_version, str):
         problems.append(ContractProblem("data_version", "ожидается строка"))
+    if model is not None:
+        problems += [ContractProblem(*problem) for problem in model_problems(model)]
+    if feature_importance is not None:
+        known = examples if isinstance(examples, pd.DataFrame) else None
+        problems += [
+            ContractProblem(*problem) for problem in importance_problems(feature_importance, known)
+        ]
     if problems:
         raise RunContractError(run_id if run_id_valid else "<без run_id>", problems)
 
@@ -442,6 +461,7 @@ def build_run_contract(  # noqa: PLR0913 — поля контракта пер�
     examples = _copy_table(examples)
     curves = _copy_table(curves)
     predictions = _copy_table(predictions)
+    model = None if model is None else to_model_info(model)
     return RunContract(
         run_id=run_id,
         predictions=predictions,
@@ -449,6 +469,9 @@ def build_run_contract(  # noqa: PLR0913 — поля контракта пер�
         config=config,
         curves=curves,
         data_version=data_version,
-        gaps=_gaps(spec, examples, curves, config, data_version),
+        gaps=_gaps(spec, examples, curves, config, data_version)
+        + ([ContractGap("model", _MODEL_PURPOSE)] if model is None else []),
         data_hash=dataset_hash(predictions, examples),
+        model=model,
+        feature_importance=_copy_table(feature_importance),
     )
