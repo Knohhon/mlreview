@@ -146,11 +146,13 @@ def _extrapolation_finding(ctx: PlaybookContext, results: CheckResults) -> None:
     excess = np.maximum(labels - high, low - labels)
     outside = excess > 0
     share = rounded(outside.mean())
-    if share < ctx.thresholds["outside_share"]:
-        return
     above, below = int((labels > high).sum()), int((labels < low).sum())
+    side = rounded(max(above, below) / len(labels))
+    if side < ctx.thresholds["side_share"]:
+        return  # неглубокое дерево сжимает диапазон с обеих сторон; тренд сдвигает в одну
     facts = {
         "outside_share": share,
+        "side_share": side,
         "above": above,
         "below": below,
         "prediction_min": rounded(low),

@@ -1,4 +1,4 @@
-"""Проекты бенчмарка: датасеты scikit-learn, линейные модели и версии с дефектами.
+"""Проекты бенчмарка: датасеты scikit-learn, линейные модели, kNN, деревья и версии с дефектами.
 
 Датасеты поставляются вместе с scikit-learn — сеть не нужна (NFR-03). Время у примеров
 синтетическое; все случайные шаги — с фиксированными сидами (NFR-05).
@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import math
 import warnings
@@ -25,6 +26,11 @@ LEAK_NOISE = 0.01
 IMBALANCE = 50
 SEEDS = (11, 12, 13)
 B08_PARAMS = (1.0, 1.05)  # базовый и кандидат: C логистической регрессии или alpha гребневой
+KNN_K = 15
+TREE_DEPTH = 4
+TREE_LEAF = 5
+RECORD_SHUFFLE = 0.1  # B17: доля перемешанных номеров записей train
+TREND = 400.0  # B18: прирост метки от первого до последнего примера по времени
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,8 @@ class Project:
     baseline_features: int  # базовый прогон — первые N признаков датасета
     corrupt_share: float  # B12: доля примеров сегмента с перемешанными предсказаниями
     l1_defects: tuple[str, ...] = ("B07", "B08", "B11")
+    model: str = "linear"  # linear, knn или tree
+    model_defects: tuple[str, ...] = ()  # дефекты плейбука семейства (B14–B18)
 
     @property
     def spec(self) -> TaskSpec:
@@ -111,13 +119,35 @@ PROJECTS: dict[str, Project] = {
         corrupt_share=0.5,
     ),
 }
+PROJECTS.update(
+    {
+        "breast_cancer_knn": dataclasses.replace(
+            PROJECTS["breast_cancer"],
+            name="breast_cancer_knn",
+            model="knn",
+            model_defects=("B14", "B15"),
+        ),
+        "breast_cancer_tree": dataclasses.replace(
+            PROJECTS["breast_cancer"],
+            name="breast_cancer_tree",
+            model="tree",
+            model_defects=("B16", "B17"),
+        ),
+        "diabetes_tree": dataclasses.replace(
+            PROJECTS["diabetes"], name="diabetes_tree", model="tree", model_defects=("B18",)
+        ),
+    }
+)
 L0_VERSIONS = ("clean", "B01", "B02", "B12")
 L1_VERSIONS = ("B03", "B05", "B07", "B08", "B11")
 
 
 def versions_for(name: str) -> tuple[str, ...]:
-    """Версии проекта: clean, дефекты L0 и применимые к нему дефекты L1."""
-    defects = PROJECTS[name].l1_defects
+    """Версии проекта: линейного — clean, L0 и применимые L1; kNN и деревьев — clean и B14–B18."""
+    project = PROJECTS[name]
+    if project.model != "linear":
+        return ("clean", *project.model_defects)
+    defects = project.l1_defects
     return L0_VERSIONS + tuple(version for version in L1_VERSIONS if version in defects)
 
 
@@ -156,6 +186,10 @@ def _frame(project: Project, version: str) -> pd.DataFrame:
     else:
         test = order >= n - round(TEST_SHARE * n)
     frame["split"] = np.where(test, "test", "train")
+    if version == "B17":
+        frame["record_no"] = _record_numbers(frame)
+    if version == "B18":
+        frame["target"] = frame["target"] + TREND * order / (n - 1)
     if version == "B01":
         test_rows = frame[frame["split"] == "test"]
         count = math.ceil(COPY_SHARE * len(test_rows))
@@ -167,34 +201,119 @@ def _frame(project: Project, version: str) -> pd.DataFrame:
     return frame
 
 
-def _fit_predict(
-    project: Project,
-    train: pd.DataFrame,
-    test: pd.DataFrame,
-    columns: list[str],
-    param: float | None = None,
-):
-    """Линейная модель; `param` — C логистической или alpha гребневой регрессии (B08)."""
-    from sklearn.exceptions import ConvergenceWarning  # noqa: PLC0415
+def _record_numbers(frame: pd.DataFrame) -> np.ndarray:
+    """B17: номер записи — train по метке с частью перемешанных номеров, test — после train."""
+    rng = np.random.default_rng(5)
+    numbers = np.zeros(len(frame), dtype=np.int64)
+    train = np.flatnonzero(frame["split"].to_numpy() == "train")
+    ordered = train[np.argsort(frame["target"].to_numpy()[train], kind="mergesort")]
+    shuffled = np.sort(
+        rng.choice(len(ordered), round(RECORD_SHUFFLE * len(ordered)), replace=False)
+    )
+    ordered[shuffled] = ordered[rng.permutation(shuffled)]
+    numbers[ordered] = np.arange(len(ordered))
+    test = np.flatnonzero(frame["split"].to_numpy() != "train")
+    numbers[rng.permutation(test)] = len(ordered) + np.arange(len(test))
+    return numbers
+
+
+def _hyperparameters(project: Project, version: str) -> dict:
+    """Гиперпараметры модели версии: у kNN и деревьев дефекты B14–B16 — в них."""
+    if project.model == "knn":
+        return {
+            "n_neighbors": 1 if version == "B15" else KNN_K,
+            "scaler": "none" if version == "B14" else "standard",
+            "weights": "uniform",
+        }
+    if project.model == "tree":
+        unbounded = version == "B16"
+        return {
+            "max_depth": None if unbounded else TREE_DEPTH,
+            "min_samples_leaf": 1 if unbounded else TREE_LEAF,
+            "criterion": "squared_error" if project.task_type == "regression" else "gini",
+        }
+    return {"C": 1.0, "scaler": "standard", "class_weight": "none"}
+
+
+def model_class(project: Project, param: float | None = None) -> str:
+    """Класс модели sklearn для контракта (FR-C07)."""
+    regression = project.task_type == "regression"
+    if project.model == "knn":
+        return (
+            "sklearn.neighbors.KNeighborsRegressor"
+            if regression
+            else ("sklearn.neighbors.KNeighborsClassifier")
+        )
+    if project.model == "tree":
+        kind = "Regressor" if regression else "Classifier"
+        return f"sklearn.tree.DecisionTree{kind}"
+    if regression:
+        return (
+            "sklearn.linear_model.LinearRegression"
+            if param is None
+            else ("sklearn.linear_model.Ridge")
+        )
+    return "sklearn.linear_model.LogisticRegression"
+
+
+def _estimator(project: Project, version: str, param: float | None):
     from sklearn.linear_model import (  # noqa: PLC0415
         LinearRegression,
         LogisticRegression,
         Ridge,
     )
+    from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor  # noqa: PLC0415
     from sklearn.pipeline import make_pipeline  # noqa: PLC0415
     from sklearn.preprocessing import StandardScaler  # noqa: PLC0415
+    from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor  # noqa: PLC0415
 
-    if project.task_type == "regression":
+    regression = project.task_type == "regression"
+    params = _hyperparameters(project, version)
+    if project.model == "knn":
+        knn = (KNeighborsRegressor if regression else KNeighborsClassifier)(
+            n_neighbors=params["n_neighbors"], weights=params["weights"]
+        )
+        return knn if params["scaler"] == "none" else make_pipeline(StandardScaler(), knn)
+    if project.model == "tree":
+        return (DecisionTreeRegressor if regression else DecisionTreeClassifier)(
+            max_depth=params["max_depth"],
+            min_samples_leaf=params["min_samples_leaf"],
+            criterion=params["criterion"],
+            random_state=0,
+        )
+    if regression:
         estimator = LinearRegression() if param is None else Ridge(alpha=param)
-        model = make_pipeline(StandardScaler(), estimator)
-    else:
-        model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000, C=param or 1.0))
+        return make_pipeline(StandardScaler(), estimator)
+    return make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000, C=param or 1.0))
+
+
+def _fit_predict(  # noqa: PLR0913 — проект, версия, данные, признаки, параметр B08
+    project: Project,
+    version: str,
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    columns: list[str],
+    *,
+    param: float | None = None,
+):
+    """Модель проекта; `param` — C логистической или alpha гребневой регрессии (B08).
+
+    Возвращает предсказания, классы (или `None`) и важности признаков деревьев (или `None`).
+    """
+    from sklearn.exceptions import ConvergenceWarning  # noqa: PLC0415
+
+    model = _estimator(project, version, param)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ConvergenceWarning)
         model.fit(train[columns], train["target"])
+    importance = None
+    if project.model == "tree":
+        importance = pd.DataFrame(
+            {"feature": columns, "importance": model.feature_importances_, "kind": "impurity"}
+        )
     if project.task_type == "regression":
-        return model.predict(test[columns]), None
-    return model.predict_proba(test[columns]), list(model.classes_)
+        return model.predict(test[columns]), None, importance
+    return model.predict_proba(test[columns]), list(model.classes_), importance
 
 
 def _predictions(project: Project, test: pd.DataFrame, raw, classes) -> pd.DataFrame:
@@ -230,20 +349,25 @@ def _corrupt(
 
 
 @functools.cache
-def _trained(name: str, split: str) -> tuple[pd.DataFrame, pd.DataFrame, dict, np.ndarray]:
-    """Примеры, test и предсказания обеих моделей; clean и B12 делят один сплит и модели."""
+def _trained(name: str, variant: str) -> tuple[pd.DataFrame, pd.DataFrame, dict, np.ndarray, dict]:
+    """Примеры, test, предсказания и важности обеих моделей варианта.
+
+    У линейных проектов вариант — сплит (clean и B12 делят один сплит и модели), у kNN и
+    деревьев — версия: дефекты B14–B18 меняют модель или данные.
+    """
     project = PROJECTS[name]
-    frame = _frame(project, split)
+    frame = _frame(project, variant)
     features = list(_load(project)[0].columns)
+    extra = ["record_no"] if "record_no" in frame.columns else []
     train = frame[frame["split"] == "train"]
     test = frame[frame["split"] == "test"].reset_index(drop=True)
-    tables = {}
+    tables, importances = {}, {}
     baseline_columns = features[: project.baseline_features]
-    for role, columns in (("candidate", features), ("baseline", baseline_columns)):
-        raw, classes = _fit_predict(project, train, test, columns)
+    for role, columns in (("candidate", features + extra), ("baseline", baseline_columns)):
+        raw, classes, importances[role] = _fit_predict(project, variant, train, test, columns)
         tables[role] = _predictions(project, test, raw, classes)
-    examples = frame[["example_id", "split", project.segment, "ts", *features]]
-    return examples, test, tables, frame["target"].to_numpy()
+    examples = frame[["example_id", "split", project.segment, "ts", *features, *extra]]
+    return examples, test, tables, frame["target"].to_numpy(), importances
 
 
 @functools.cache
@@ -255,7 +379,7 @@ def _seeded(name: str, param: float, seed: int) -> pd.DataFrame:
     train = frame[frame["split"] == "train"]
     rows = np.random.default_rng(seed).integers(0, len(train), len(train))
     test = frame[frame["split"] == "test"].reset_index(drop=True)
-    raw, classes = _fit_predict(project, train.iloc[rows], test, features, param)
+    raw, classes, _ = _fit_predict(project, "clean", train.iloc[rows], test, features, param=param)
     return _predictions(project, test, raw, classes)
 
 
@@ -266,12 +390,7 @@ def clear_cache() -> None:
 
 
 def _configs(project: Project, version: str) -> tuple[dict, dict]:
-    baseline = {
-        "features": project.baseline_features,
-        "C": 1.0,
-        "scaler": "standard",
-        "class_weight": "none",
-    }
+    baseline = {"features": project.baseline_features, **_hyperparameters(project, version)}
     candidate = {**baseline, "features": "all"}
     if version == "B11":
         candidate.update(C=0.5, scaler="robust", class_weight="balanced")
@@ -302,6 +421,7 @@ def _seed_runs(project: Project, spec: TaskSpec, examples: pd.DataFrame) -> Runs
                 examples=examples,
                 config={"features": "all", "C": param, "seed": seed},
                 data_version=f"{project.name}-v1",
+                model={"class": model_class(project, param)},
             )
             for seed in SEEDS
         ]
@@ -312,8 +432,11 @@ def _seed_runs(project: Project, spec: TaskSpec, examples: pd.DataFrame) -> Runs
 def build_runs(project: Project, version: str) -> Runs:
     """Кандидат (все признаки) и базовый прогон (первые признаки) версии проекта."""
     spec = project.spec_for(version)
-    split = version if version in ("B01", "B02") else "clean"
-    examples, test, tables, targets = _trained(project.name, split)
+    if project.model == "linear":
+        variant = version if version in ("B01", "B02") else "clean"
+    else:
+        variant = version
+    examples, test, tables, targets, importances = _trained(project.name, variant)
     if version == "B08":
         return _seed_runs(project, spec, examples)
     tables = dict(tables)
@@ -341,6 +464,8 @@ def build_runs(project: Project, version: str) -> Runs:
             examples=examples_of[role],
             config=configs[role],
             data_version=versions[role],
+            model={"class": model_class(project)},
+            feature_importance=importances[role],
         )
         for role, predictions in tables.items()
     }

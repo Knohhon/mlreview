@@ -33,7 +33,7 @@ thresholds:
   importance_share: 0.3 # доля важности признака от суммы важностей своего kind
   id_unique_share: 0.9  # доля уникальных значений на train — похож на идентификатор
   min_train: 30         # меньше строк train — уникальность не показательна
-  outside_share: 0.2    # доля меток test вне диапазона предсказаний
+  side_share: 0.3       # доля меток test выше максимума или ниже минимума предсказаний
 checks:
   tree.unbounded_depth:
     suggestion: >-

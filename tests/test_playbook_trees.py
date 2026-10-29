@@ -245,6 +245,7 @@ def test_extrapolation_on_temporal_trend():
     assert finding.requirement == "FR-D11, B18"
     facts = finding.facts
     assert facts["outside_share"] >= 0.9
+    assert facts["side_share"] == round(max(facts["above"], facts["below"]) / 100, 6)
     assert facts["above"] + facts["below"] == round(facts["outside_share"] * 100)
     assert facts["prediction_max"] == 120.0
     assert finding.message == (
@@ -265,8 +266,23 @@ def test_extrapolation_without_temporal_split_is_low():
 
 
 def test_labels_inside_range_mean_no_finding():
-    """B9: метки внутри диапазона предсказаний — находки нет."""
+    """B9: метки внутри диапазона или вне его с обеих сторон понемногу — находки нет."""
     assert _finding(_review(_regression(), REGRESSION), EXTRAPOLATION) is None
+    contract = _regression()
+    predictions = contract.predictions.assign(
+        prediction=contract.predictions["label"].clip(
+            contract.predictions["label"].quantile(0.15),
+            contract.predictions["label"].quantile(0.85),
+        )
+    )
+    both_sides = build_run_contract(
+        REGRESSION,
+        run_id="tree-reg",
+        predictions=predictions,
+        examples=contract.examples,
+        model={"class": "DecisionTreeRegressor"},
+    )
+    assert _finding(_review(both_sides, REGRESSION), EXTRAPOLATION) is None
 
 
 # --- Подсказки и воспроизводимость ---------------------------------------------------------------
