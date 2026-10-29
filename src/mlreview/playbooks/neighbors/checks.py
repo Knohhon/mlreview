@@ -13,7 +13,7 @@ import pandas as pd
 from mlreview.analyzers.data_checks import feature_columns
 from mlreview.analyzers.evaluation import rounded
 from mlreview.core.findings import CheckResults, Finding
-from mlreview.core.run_contract import CLASS_PREFIX, RunContract
+from mlreview.playbooks.common import extreme_share, probabilities, train_rows
 from mlreview.playbooks.context import PlaybookContext
 from mlreview.playbooks.resolve import flatten
 
@@ -22,7 +22,6 @@ SMALL_K_CHECK = "neighbors.small_k"
 NO_SCALER_VALUES = frozenset({"none", "null", "false", "no", ""})
 SCALER_KEY = re.compile(r"scaler|normalizer|transformer", re.IGNORECASE)
 SCALER_VALUE = re.compile(r"Scaler|Normalizer|QuantileTransformer|PowerTransformer")
-TRAIN = "train"
 
 
 def _scaler(config: dict) -> str | None:
@@ -48,7 +47,7 @@ def _scale_finding(ctx: PlaybookContext, results: CheckResults) -> None:
     if examples is None:
         results.skip(SCALE_CHECK, "нет examples")
         return
-    train = examples[examples["split"].astype(str) == TRAIN]
+    train = train_rows(examples)
     if train.empty:
         results.skip(SCALE_CHECK, "в examples нет сплита train")
         return
@@ -94,15 +93,6 @@ def _scale_finding(ctx: PlaybookContext, results: CheckResults) -> None:
     )
 
 
-def _probabilities(contract: RunContract) -> np.ndarray:
-    """Вероятности для оценки грубости: `prediction` бинарной или максимум строки multiclass."""
-    predictions = contract.predictions
-    if "prediction" in predictions.columns:
-        return predictions["prediction"].astype(float).to_numpy()
-    columns = [column for column in predictions.columns if column.startswith(CLASS_PREFIX)]
-    return predictions[columns].astype(float).to_numpy().max(axis=1)
-
-
 def _small_k_finding(ctx: PlaybookContext, results: CheckResults) -> None:
     if "n_neighbors" not in ctx.params:
         aliases = ", ".join(ctx.playbook.manifest.params["n_neighbors"].aliases)
@@ -116,13 +106,13 @@ def _small_k_finding(ctx: PlaybookContext, results: CheckResults) -> None:
         return
     contract, task = ctx.review.contract, ctx.review.spec.task
     examples = contract.examples
-    n_train = None if examples is None else int((examples["split"].astype(str) == TRAIN).sum())
+    n_train = None if examples is None else len(train_rows(examples))
     message = f"kNN с k = {k}: предсказание по {k} ближайшим соседям запоминает шум train"
     facts: dict = {"n_neighbors": k}
     if task.type != "regression" and task.output == "probabilities":
-        values = _probabilities(contract)
+        values = probabilities(contract)
         distinct = int(np.unique(values).size)
-        extreme = rounded(np.mean((values == 0) | (values == 1)))
+        extreme = extreme_share(values)
         facts.update({"distinct_values": distinct, "extreme_share": extreme})
         message += f"; вероятности принимают {distinct} значений, ровно 0 или 1 — {extreme}"
         if extreme >= ctx.thresholds["extreme_share"]:
