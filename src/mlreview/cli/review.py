@@ -18,6 +18,7 @@ from mlreview.cli.llm import add_llm_arguments, terminal_consent
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import load_task_spec
 from mlreview.llm.service import hypotheses_outcome, outcome_lines
+from mlreview.playbooks import resolve_family
 from mlreview.reporting import render_report, report_payload
 
 
@@ -46,6 +47,19 @@ def add_contract_actions(parser: argparse.ArgumentParser) -> None:
     add_tracking_argument(check)
 
 
+def _model_line(contract: RunContract) -> str:
+    """Модель прогона для сводки контракта (FR-C07)."""
+    model = contract.model
+    if model is None:
+        return "модель: не указана"
+    family = model.family
+    if family is None:
+        resolved = resolve_family(model)
+        family = "не определено" if resolved is None else f"{resolved} (по классу)"
+    name = model.class_name or "класс не указан"
+    return f"модель: {name} (семейство: {family}, источник: {model.source})"
+
+
 def _contract_summary(contract: RunContract) -> list[str]:
     examples = contract.examples
     if examples is None:
@@ -62,7 +76,10 @@ def _contract_summary(contract: RunContract) -> list[str]:
         f"  параметров: {len(contract.config)}",
         f"  версия данных: {contract.data_version or 'нет'}",
         f"  хеш данных: {contract.data_hash}",
+        f"  {_model_line(contract)}",
     ]
+    if contract.feature_importance is not None:
+        lines.append(f"  важностей признаков: {len(contract.feature_importance)}")
     lines += [f"  нет {gap.field} — недоступно: {gap.purpose}" for gap in contract.gaps]
     return lines
 
@@ -110,6 +127,7 @@ def add_review_arguments(parser: argparse.ArgumentParser) -> None:
 DIAGNOSE_HELP = {
     "data": "проверки данных: дубли между сплитами, временная утечка, сильные признаки",
     "segments": "срезы: сегменты хуже остальных и регрессии сегментов",
+    "model": "модель: проверки плейбуков по семейству модели",
     "curves": "кривые обучения: переобучение, недообучение, нестабильность",
     "process": "процесс: разные данные, несколько изменений, многократная валидация",
 }
@@ -174,6 +192,7 @@ def run_review(args: argparse.Namespace) -> int:
 DIAGNOSE_TITLES = {
     "data": "диагностика данных прогона",
     "segments": "диагностика сегментов прогона",
+    "model": "диагностика модели прогона",
     "curves": "диагностика кривых обучения прогона",
     "process": "диагностика процесса прогона",
 }

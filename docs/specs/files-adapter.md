@@ -29,7 +29,8 @@ contract = load_files_contract(spec, "runs/exp-043")
 | `examples` | `examples.parquet` или `examples.csv` |
 | `curves` | `curves.parquet` или `curves.csv` (колонки `name`, `step`, `value`) |
 | `config` | `config.yaml` или `config.json` — словарь параметров |
-| `run_id`, `data_version` | `run.yaml` или `run.json` — словарь с ключами `run_id` и `data_version`; без файла или ключа `run_id` — имя каталога, `data_version` — нет |
+| `run_id`, `data_version`, `model` | `run.yaml` или `run.json` — словарь с ключами `run_id`, `data_version` и `model` (`class`/`family`/`library`, `docs/specs/model-info.md`); без файла или ключа `run_id` — имя каталога, `data_version` и `model` — нет |
+| `feature_importance` | `feature_importance.parquet` или `feature_importance.csv` (колонки `feature`, `importance`, необязательная `kind`) |
 
 `run.yaml` пишется последним и служит признаком «прогон завершён» для проактивного режима. В CSV колонка `example_id` читается как строка, как в адаптере MLflow.
 
@@ -41,8 +42,8 @@ contract = load_files_contract(spec, "runs/exp-043")
 
 - B1. Дано: каталог со всеми файлами в parquet и `run.yaml` · когда `load_files_contract(spec, путь)` · тогда контракт с `run_id` и `data_version` из `run.yaml`, `config` из `config.yaml`, таблицами, равными сохранённым; `gaps` пуст.
 - B2. Дано: те же таблицы в CSV и `config.json`, `run.json` · тогда контракт тот же; `example_id` — строки (`007` остаётся `007`).
-- B3. Дано: в каталоге только `predictions.csv` · тогда `run_id` — имя каталога, `gaps` перечисляет `examples`, `curves`, `config`, `data_version`.
-- B4. Дано: `save_run_files(путь, predictions, examples=…, curves=…, config=…, data_version=…, run_id=…)` · тогда каталог создан, таблицы — в parquet без индекса, `config.yaml` и `run.yaml` записаны; `load_files_contract` возвращает равный контракт.
+- B3. Дано: в каталоге только `predictions.csv` · тогда `run_id` — имя каталога, `gaps` перечисляет `examples`, `curves`, `config`, `data_version`, `model`.
+- B4. Дано: `save_run_files(путь, predictions, examples=…, curves=…, config=…, data_version=…, run_id=…, model=…, feature_importance=…)` · тогда каталог создан, таблицы — в parquet без индекса, `config.yaml` и `run.yaml` записаны; `load_files_contract` возвращает равный контракт.
 - B5. Дано: ссылка — существующий каталог · когда `load_run(spec, ссылка)` · тогда работает адаптер файлов; иначе — адаптер MLflow с `tracking_uri`.
 - B6. Дано: каталог прогона · когда `mlreview contract check <каталог> --spec …` · тогда код 0 и сводка контракта, как для MLflow.
 
@@ -63,5 +64,5 @@ contract = load_files_contract(spec, "runs/exp-043")
 
 ## Тесты
 
-- B1–B5, E1–E6 → `tests/test_files_adapter.py`
+- B1–B5, E1–E6 → `tests/test_files_adapter.py`; модель и важности — `docs/specs/model-info.md` (F1–F2, C1)
 - B6 → `tests/test_files_adapter.py::test_contract_check_command_reads_directory`

@@ -20,6 +20,7 @@ from mlreview.llm.service import ask_outcome, hypotheses_outcome
 from mlreview.metrics.advisor import context_from_answers, default_answers, recommend
 from mlreview.metrics.library import spec_metrics
 from mlreview.metrics.testing import positive_rate, run_metric_tests
+from mlreview.playbooks import resolve_family
 
 
 def review(  # noqa: PLR0913 — те же параметры, что у mlreview review/diagnose
@@ -62,7 +63,7 @@ def review(  # noqa: PLR0913 — те же параметры, что у mlrevie
 
 
 def contract_check(run: str, spec: str, tracking_uri: str | None = None) -> dict[str, Any]:
-    """Контракт прогона: размеры, сплиты, кривые, версия и хеш данных, пробелы."""
+    """Контракт прогона: размеры, сплиты, кривые, версия и хеш данных, модель, пробелы."""
     contract = api.load_run(api.load_spec(spec), run, tracking_uri=tracking_uri)
     examples = contract.examples
     return {
@@ -75,6 +76,12 @@ def contract_check(run: str, spec: str, tracking_uri: str | None = None) -> dict
         "data_version": contract.data_version,
         "data_hash": contract.data_hash,
         "gaps": [{"field": gap.field, "purpose": gap.purpose} for gap in contract.gaps],
+        "model": None
+        if contract.model is None
+        else {**contract.model.to_dict(), "family": resolve_family(contract.model)},
+        "feature_importance": (
+            None if contract.feature_importance is None else len(contract.feature_importance)
+        ),
     }
 
 

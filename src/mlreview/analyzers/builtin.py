@@ -1,4 +1,4 @@
-"""Встроенные анализаторы в реестре (FR-E01): данные, срезы, метрики, кривые, процесс.
+"""Встроенные анализаторы в реестре (FR-E01): данные, срезы, метрики, модель, кривые, процесс.
 
 Порядок регистрации задаёт порядок находок и пропусков внутри группы.
 """
@@ -15,6 +15,7 @@ from mlreview.analyzers.seeds import seed_findings
 from mlreview.analyzers.slices import segment_findings
 from mlreview.analyzers.suitability import suitability_findings
 from mlreview.core.findings import CheckResults
+from mlreview.playbooks.runner import model_findings
 
 
 def _metrics(ctx: ReviewContext) -> CheckResults:
@@ -50,6 +51,7 @@ BUILTIN = (
         "FR-D08",
         lambda ctx: calibration_findings(ctx.spec, ctx.contract, ctx.baseline),
     ),
+    Analyzer("playbooks", "model", "FR-D11", model_findings),
     Analyzer("curves", "curves", "FR-D04", lambda ctx: curve_findings(ctx.contract.curves)),
     Analyzer("process", "process", "FR-D06", process_findings),
 )

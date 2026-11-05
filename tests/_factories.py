@@ -62,6 +62,7 @@ def binary_contract(  # noqa: PLR0913 — параметры синтетиче�
     config: Mapping[str, Any] | None = None,
     curves: pd.DataFrame | None = None,
     with_examples: bool = True,
+    model: Mapping[str, Any] | None = None,
 ) -> RunContract:
     predictions, examples = binary_tables(seed=seed, duplicates=duplicates, shift=shift)
     return build_run_contract(
@@ -72,4 +73,5 @@ def binary_contract(  # noqa: PLR0913 — параметры синтетиче�
         config=config,
         curves=curves,
         data_version=data_version,
+        model=model,
     )

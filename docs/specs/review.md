@@ -8,7 +8,7 @@
 
 - `Finding` — `check` (id проверки, например `data.split_duplicates`), `severity` (`critical` > `high` > `medium` > `low` > `info`), `message` (одна строка по-русски с числами), `requirement` (опора, например `FR-D03, B01`), `evidence` (до 10 id примеров), `facts` (словарь чисел и строк, на которых построено сообщение; дробные числа округлены до 6 знаков, а числа в сообщении выводятся из этих фактов; основа будущей сверки чисел LLM, FR-L02), `suggestion` (предложение изменения или эксперимента; инструмент его не применяет).
 - `Skipped` — `check` и `reason`: что не проверено и почему (X1).
-- `Report` — `run_id`, `baseline_id`, `data_version`, `baseline_data_version`, `compared_examples` (число общих примеров при сравнении), `findings`, `skipped`; `to_dict()` — словарь для JSON.
+- `Report` — `run_id`, `baseline_id`, `data_version`, `baseline_data_version`, `compared_examples` (число общих примеров при сравнении), `model` (класс и семейство кандидата — `docs/specs/playbooks.md`, B12), `findings`, `skipped`; `to_dict()` — словарь для JSON.
 
 ## Ревью
 
@@ -24,7 +24,7 @@
 
 ## Ожидаемое поведение
 
-- B1. Дано: находки разной важности · когда собирается отчёт · тогда находки отсортированы по severity (`critical` первыми), затем по `check`, затем по сообщению; `skipped` — в порядке групп `data`, `segments`, `metrics`, `curves`, `process`.
+- B1. Дано: находки разной важности · когда собирается отчёт · тогда находки отсортированы по severity (`critical` первыми), затем по `check`, затем по сообщению; `skipped` — в порядке групп `data`, `segments`, `metrics`, `model`, `curves`, `process`.
 - B2. Дано: прогон с дублями train/test, сегментом хуже остальных и без базового прогона · когда `review(spec, contract)` · тогда в отчёте находки групп `data`, `segments`, `metrics`; `baseline_id` и `compared_examples` — `None`.
 - B3. Дано: `groups=("data",)` · тогда в отчёте только находки и пропуски группы `data`.
 - B4. Дано: базовый прогон · тогда `baseline_id`, `baseline_data_version` и `compared_examples` заполнены; есть находки `comparison.metric_delta`.
@@ -35,7 +35,7 @@
 Прогоны читаются из MLflow адаптером (`docs/specs/mlflow-adapter.md`). Общие аргументы: `<run_id>`, `--spec <путь>` (обязателен), `--tracking-uri <адрес>`, `--format text|json` (по умолчанию `text`).
 
 - C1. `mlreview review <run_id> [<сиды>…] --spec … [--baseline <run_id> [<сиды>…]]` · тогда код 0; в stdout — отчёт всех групп.
-- C2. `mlreview diagnose data <run_id> --spec …` — только группа `data`; `mlreview diagnose segments|curves|process <run_id> --spec … [--baseline <run_id>]` — только эта группа. Код 0.
+- C2. `mlreview diagnose data <run_id> --spec …` — только группа `data`; `mlreview diagnose segments|model|curves|process <run_id> --spec … [--baseline <run_id>]` — только эта группа. Код 0.
 - C3. Текстовый отчёт:
 
   ```text

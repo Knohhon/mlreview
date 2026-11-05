@@ -74,7 +74,9 @@ def test_store_and_journal_tools():
     assert entry["id"] == "H-0001"
     found = tools.journal_search(query="focal loss")
     assert found["hits"][0]["entry"]["id"] == "H-0001"
-    assert tools.contract_check(run="run-0", spec="task.yaml")["run_id"] == "run-0"
+    checked = tools.contract_check(run="run-0", spec="task.yaml")
+    assert checked["run_id"] == "run-0"
+    assert (checked["model"], checked["feature_importance"]) == (None, None)
     plan = tools.metrics_recommend(spec="task.yaml", answers={"decision": "probability"})
     assert plan["primary"] == "log_loss"
     tested = tools.metrics_test(run="run-0", spec="task.yaml")

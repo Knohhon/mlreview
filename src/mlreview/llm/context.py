@@ -48,6 +48,7 @@ def run_dict(report: Report) -> dict[str, Any]:
         "data_version": report.data_version,
         "baseline_data_version": report.baseline_data_version,
         "compared_examples": report.compared_examples,
+        "model": None if report.model is None else dict(report.model),
     }
 
 

@@ -14,7 +14,7 @@ from mlreview.core.findings import CheckResults
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
 
-GROUPS: tuple[str, ...] = ("data", "segments", "metrics", "curves", "process")
+GROUPS: tuple[str, ...] = ("data", "segments", "metrics", "model", "curves", "process")
 
 
 @dataclass(frozen=True)

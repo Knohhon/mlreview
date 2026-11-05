@@ -30,6 +30,10 @@ FOUND_BY: dict[str, tuple[str, str | tuple[str, ...] | None]] = {
     "B07": ("process.data_version_mismatch", None),
     "B08": ("seeds.within_noise", ("high", "medium")),
     "B11": ("process.multiple_changes", None),
+    "B14": ("neighbors.unscaled_features", None),
+    "B15": ("neighbors.small_k", None),
+    "B16": ("tree.unbounded_depth", None),
+    "B18": ("tree.extrapolation", None),
 }
 
 __all__ = ["PROJECTS", "BenchmarkResult", "VersionResult", "main", "run_benchmark"]
@@ -79,6 +83,11 @@ def _is_found(project: Project, version: str, findings: list[Finding]) -> bool |
     if version == "B03":
         return any(
             f.check == "data.strong_feature" and f.facts["feature"] == "leak" for f in findings
+        )
+    if version == "B17":
+        return any(
+            f.check == "tree.id_like_importance" and f.facts["feature"] == "record_no"
+            for f in findings
         )
     if version == "B05":
         return any(

@@ -23,15 +23,16 @@ register(Analyzer(name="my", group="data", requirement="FR-…", run=my_check))
 | `data` | проверки данных | `docs/specs/data-checks.md` |
 | `segments` | срезы | `docs/specs/slices.md` |
 | `metrics` | метрики и сравнение, пригодность метрик, разброс по сидам, калибровка, расхождение моделей | `run-comparison.md`, `metrics.md`, `seeds.md`, `calibration.md` |
+| `model` | проверки плейбуков по семейству модели (FR-D11) | `docs/specs/playbooks.md` |
 | `curves` | кривые обучения | `docs/specs/learning-curves.md` |
 | `process` | логические проверки процесса | `docs/specs/process-checks.md` |
 
-Порядок групп и пропусков в отчёте — `data`, `segments`, `metrics`, `curves`, `process`; внутри группы — порядок регистрации.
+Порядок групп и пропусков в отчёте — `data`, `segments`, `metrics`, `model`, `curves`, `process`; внутри группы — порядок регистрации.
 
 ## Команды
 
 - `mlreview review <прогон> [<прогон по другому сиду>…] --spec … [--baseline <прогон> [<сид>…]]` — первый прогон каждой стороны основной: по нему считаются данные, срезы, метрики и сравнения; остальные — сиды той же конфигурации (FR-D05).
-- `mlreview diagnose data|segments|curves|process <прогон> --spec … [--baseline <прогон>]` — одна группа.
+- `mlreview diagnose data|segments|model|curves|process <прогон> --spec … [--baseline <прогон>]` — одна группа.
 
 ## Ожидаемое поведение
 

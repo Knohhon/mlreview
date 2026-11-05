@@ -92,6 +92,7 @@ def _full_kwargs() -> dict:
         "config": {"C": 1.0, "penalty": "l2"},
         "curves": _curves(),
         "data_version": "ds-v3",
+        "model": {"class": "sklearn.linear_model.LogisticRegression"},
     }
 
 
@@ -301,6 +302,7 @@ def test_gaps_order():
         "curves",
         "config",
         "data_version",
+        "model",
     ]
 
 

@@ -1,4 +1,4 @@
-"""Ревью прогона: анализаторы выбранных групп → отчёт (FR-R01, FR-D01–D08, FR-E01).
+"""Ревью прогона: анализаторы выбранных групп → отчёт (FR-R01, FR-D01–D08, FR-D11, FR-E01).
 
 Отчёт детерминированный и работает без LLM (NFR-03); что не проверено — в `skipped` (X1).
 Поведение зафиксировано в `docs/specs/review.md` и `docs/specs/analyzers.md`.
@@ -13,6 +13,7 @@ from mlreview.analyzers.registry import GROUPS, ReviewContext, run_analyzers
 from mlreview.core.findings import Report, sort_findings
 from mlreview.core.run_contract import RunContract
 from mlreview.core.task_spec import TaskSpec
+from mlreview.playbooks.runner import apply_overrides, model_summary
 
 __all__ = ["GROUPS", "review"]
 
@@ -44,7 +45,7 @@ def review(  # noqa: PLR0913 — прогоны, сиды и история ре
     results = run_analyzers(ctx, groups)
     return Report(
         run_id=contract.run_id,
-        findings=sort_findings(results.findings),
+        findings=sort_findings(apply_overrides(results.findings, contract, spec.task.type)),
         skipped=results.skipped,
         baseline_id=None if baseline is None else baseline.run_id,
         data_version=contract.data_version,
@@ -54,4 +55,5 @@ def review(  # noqa: PLR0913 — прогоны, сиды и история ре
         baseline_data_hash=None if baseline is None else baseline.data_hash,
         candidate_seeds=tuple(run.run_id for run in ctx.candidate_seeds),
         baseline_seeds=tuple(run.run_id for run in ctx.baseline_seeds),
+        model=model_summary(contract),
     )

@@ -1,7 +1,8 @@
-"""Адаптер локальных файлов: каталог прогона → контракт прогона (FR-C03, FR-C02).
+"""Адаптер локальных файлов: каталог прогона → контракт прогона (FR-C03, FR-C02, FR-C07).
 
-Таблицы — `predictions|examples|curves.parquet|csv`, конфиг — `config.yaml|json`, id прогона
-и версия данных — `run.yaml|json`. Поведение зафиксировано в `docs/specs/files-adapter.md`.
+Таблицы — `predictions|examples|curves|feature_importance.parquet|csv`, конфиг —
+`config.yaml|json`, id прогона, версия данных и модель — `run.yaml|json`. Поведение
+зафиксировано в `docs/specs/files-adapter.md` и `docs/specs/model-info.md`.
 """
 
 from __future__ import annotations
@@ -15,12 +16,14 @@ import pandas as pd
 import yaml
 
 from mlreview.adapters.errors import AdapterError
+from mlreview.core.model_info import ModelInfo
 from mlreview.core.run_contract import RunContract, build_run_contract
 from mlreview.core.task_spec import TaskSpec
 
 TABLE_FORMATS = ("parquet", "csv")
 MAPPING_FORMATS = ("yaml", "json")
 META_FILE = "run.yaml"
+OPTIONAL_TABLES = ("examples", "curves", "feature_importance")
 
 
 class FilesAdapterError(AdapterError):
@@ -71,7 +74,8 @@ def load_files_contract(spec: TaskSpec, directory: str | Path) -> RunContract:
     if predictions_path is None:
         expected = " или ".join(f"predictions.{fmt}" for fmt in TABLE_FORMATS)
         raise FilesAdapterError(f"{directory}: нет файла предсказаний {expected}")
-    tables = {name: _single(directory, name, TABLE_FORMATS) for name in ("examples", "curves")}
+    tables = {name: _single(directory, name, TABLE_FORMATS) for name in OPTIONAL_TABLES}
+    frames = {name: _read_table(path) if path else None for name, path in tables.items()}
     config_path = _single(directory, "config", MAPPING_FORMATS)
     meta_path = _single(directory, "run", MAPPING_FORMATS)
     meta = _read_mapping(meta_path) if meta_path else {}
@@ -80,10 +84,12 @@ def load_files_contract(spec: TaskSpec, directory: str | Path) -> RunContract:
         spec,
         run_id=directory.resolve().name if run_id is None else str(run_id),
         predictions=_read_table(predictions_path),
-        examples=_read_table(tables["examples"]) if tables["examples"] else None,
+        examples=frames["examples"],
         config=_read_mapping(config_path) if config_path else None,
-        curves=_read_table(tables["curves"]) if tables["curves"] else None,
+        curves=frames["curves"],
         data_version=meta.get("data_version"),
+        model=meta.get("model"),
+        feature_importance=frames["feature_importance"],
     )
 
 
@@ -96,6 +102,8 @@ def save_run_files(  # noqa: PLR0913 — поля контракта прого�
     config: Mapping[str, Any] | None = None,
     data_version: str | None = None,
     run_id: str | None = None,
+    model: ModelInfo | Mapping[str, Any] | None = None,
+    feature_importance: pd.DataFrame | None = None,
 ) -> Path:
     """Сохраняет таблицы контракта в каталог прогона; `run.yaml` пишется последним (B4).
 
@@ -109,6 +117,7 @@ def save_run_files(  # noqa: PLR0913 — поля контракта прого�
             ("predictions", predictions),
             ("examples", examples),
             ("curves", curves),
+            ("feature_importance", feature_importance),
         ):
             if frame is not None:
                 frame.to_parquet(directory / f"{name}.parquet", index=False)
@@ -118,11 +127,20 @@ def save_run_files(  # noqa: PLR0913 — поля контракта прого�
         meta = {"run_id": run_id or directory.resolve().name}
         if data_version is not None:
             meta["data_version"] = str(data_version)
+        if model is not None:
+            meta["model"] = _model_meta(model)
         text = yaml.safe_dump(meta, allow_unicode=True, sort_keys=True)
         (directory / META_FILE).write_text(text, encoding="utf-8")
     except OSError as exc:
         raise FilesAdapterError(f"не удалось записать прогон в {directory}: {exc}") from exc
     return directory
+
+
+def _model_meta(model: ModelInfo | Mapping[str, Any]) -> dict[str, Any]:
+    """Модель для `run.yaml`: только заданные ключи `class`, `family`, `library` (F2)."""
+    values = model.to_dict() if isinstance(model, ModelInfo) else dict(model)
+    values.pop("source", None)
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def is_finished(directory: Path) -> bool:

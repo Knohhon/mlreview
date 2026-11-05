@@ -1,4 +1,4 @@
-"""Приёмочный бенчмарк L0–L1: дефекты B01–B12; метрики Q1, Q2; NFR-06.
+"""Приёмочный бенчмарк L0–L1 и плейбуков: дефекты B01–B18; метрики Q1, Q2; NFR-06.
 
 Спецификация: docs/specs/benchmark.md.
 """
@@ -26,7 +26,8 @@ def test_every_version_evaluated(results):
     """B1: все проекты и версии; Q1 и Q2 считаются по версиям."""
     seen = [(v.project, v.version) for v in results.versions]
     assert seen == [(project, version) for project in PROJECTS for version in versions_for(project)]
-    assert len([v for v in results.versions if v.version != "clean"]) == 21
+    assert len([v for v in results.versions if v.version != "clean"]) == 26
+    assert len([v for v in results.versions if v.version == "clean"]) == 6
 
     defects = [v for v in results.versions if v.version != "clean"]
     clean = [v for v in results.versions if v.version == "clean"]
@@ -44,6 +45,26 @@ def test_l1_gate_and_target(results):
     assert results.false_critical == 0
 
 
+MODEL_PROJECTS = ("breast_cancer_knn", "breast_cancer_tree", "diabetes_tree")
+
+
+def test_model_projects_clean_and_recognized(results):
+    """B7: у чистых версий kNN и деревьев нет находок плейбуков; модель распознана везде."""
+    for version in results.versions:
+        assert "model" not in {s.check for s in version.report.skipped}, version.project
+        if version.project in MODEL_PROJECTS and version.version == "clean":
+            checks = {f.check for f in version.report.findings}
+            assert not {c for c in checks if c.startswith(("neighbors.", "tree."))}, checks
+    defects = {(v.project, v.version) for v in results.versions if v.project in MODEL_PROJECTS}
+    assert defects >= {
+        ("breast_cancer_knn", "B14"),
+        ("breast_cancer_knn", "B15"),
+        ("breast_cancer_tree", "B16"),
+        ("breast_cancer_tree", "B17"),
+        ("diabetes_tree", "B18"),
+    }
+
+
 def test_b12_overall_metric_not_worse(results):
     """B3: в версии B12 кандидат в целом не хуже базового прогона."""
     for version in results.versions:
@@ -55,9 +76,9 @@ def test_benchmark_is_reproducible():
     """B4: повторный запуск даёт идентичные результаты (NFR-05)."""
     pytest.importorskip("sklearn")
     clear_cache()
-    first = run_benchmark(projects=("breast_cancer",))
+    first = run_benchmark(projects=("breast_cancer", "breast_cancer_tree"))
     clear_cache()  # модели обучаются заново, а не берутся из кэша
-    second = run_benchmark(projects=("breast_cancer",))
+    second = run_benchmark(projects=("breast_cancer", "breast_cancer_tree"))
     assert [v.report.to_dict() for v in first.versions] == [
         v.report.to_dict() for v in second.versions
     ]
