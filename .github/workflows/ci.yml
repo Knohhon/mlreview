@@ -33,7 +33,8 @@ jobs:
         if: matrix.python-version == '3.13'
 
   web:
-    runs-on: ubuntu-latest
+    # Playwright 1.55.1 поддерживает Ubuntu 24.04; ubuntu-latest может сменить ОС.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
