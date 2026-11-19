@@ -27,7 +27,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev,mlflow,mcp]"  # адаптер MLflow (FR-C03) и MCP-сервер (FR-R02)
+      - run: pip install -e ".[dev,mlflow,mcp,web,web-test]"  # адаптер MLflow (FR-C03) и MCP-сервер (FR-R02)
       - run: pytest
       - run: python -m benchmark --perf  # NFR-06: ревью 100 тыс. примеров без LLM ≤ 2 мин
         if: matrix.python-version == '3.13'
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install -e ".[dev,web,web-test]"
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run format:check && npm run build && npm test
+        working-directory: frontend
+      - run: git diff --exit-code -- src/mlreview/web/static
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run e2e
+        working-directory: frontend
+      - run: python -m build --wheel --outdir /tmp/mlreview-wheel

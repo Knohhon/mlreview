@@ -77,3 +77,9 @@
 
 - B1–B5, E1 → `tests/test_review.py`
 - C1–C8, E2 → `tests/test_review_cli.py`
+
+## Выбор групп из Web/CLI
+
+- B11. Дано `review --groups data metrics` · когда выполняется ревью · тогда
+  запускаются только выбранные группы; без флага сохраняется полный набор проверок.
+  Тест: `tests/test_web.py::test_copy_cli_groups`.

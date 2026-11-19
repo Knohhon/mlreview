@@ -333,6 +333,17 @@ class Store:
             self._upsert_runs(db, runs)
 
     def _upsert_runs(self, db: sqlite3.Connection, runs: Iterable[RunRecord]) -> None:
+        runs = list(runs)
+        sources = {}
+        for run in runs:
+            known = db.execute("SELECT source FROM runs WHERE run_id=?", (run.run_id,)).fetchone()
+            previous = known[0] if known else sources.get(run.run_id)
+            if previous is not None and previous != run.source:
+                raise StoreError(
+                    f"прогон {run.run_id}: другой источник уже использует этот ID; "
+                    "задайте уникальный native run ID"
+                )
+            sources[run.run_id] = run.source
         at = self._timestamp()
         for run in runs:
             db.execute(
