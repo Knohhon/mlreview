@@ -122,6 +122,13 @@ def add_run_arguments(
 
 def add_review_arguments(parser: argparse.ArgumentParser) -> None:
     add_run_arguments(parser, baseline=True, seeds=True)
+    parser.add_argument(
+        "--groups",
+        nargs="+",
+        choices=GROUPS,
+        default=GROUPS,
+        help="группы анализаторов (по умолчанию все)",
+    )
 
 
 DIAGNOSE_HELP = {
@@ -186,7 +193,7 @@ def _analyze(args: argparse.Namespace, groups: tuple[str, ...], title: str) -> i
 
 
 def run_review(args: argparse.Namespace) -> int:
-    return _analyze(args, GROUPS, "ревью прогона")
+    return _analyze(args, tuple(args.groups), "ревью прогона")
 
 
 DIAGNOSE_TITLES = {

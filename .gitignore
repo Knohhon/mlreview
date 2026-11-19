@@ -31,3 +31,11 @@ mlartifacts/
 
 # Рабочее пространство MLReview
 .mlreview/
+
+# Local Codex hook snapshots
+.codex-state/
+
+# Сборка и тесты локального Web UI
+frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/

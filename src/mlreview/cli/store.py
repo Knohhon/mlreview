@@ -24,6 +24,7 @@ def run_init(args: argparse.Namespace) -> int:
         print(f"  настройки: {workspace.config_path} (LLM выключен)")
     else:
         print(f"уже инициализировано: {workspace.root}")
+    print("Далее: mlreview ui (требуется web extra)")
     return 0
 
 

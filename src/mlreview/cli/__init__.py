@@ -11,13 +11,14 @@ import sys
 from collections.abc import Callable, Sequence
 
 from mlreview import __version__
-from mlreview.cli import journal, llm, metrics, playbooks, review, store, watch
+from mlreview.cli import journal, llm, metrics, playbooks, review, store, ui, watch
 from mlreview.cli.common import ERRORS
 from mlreview.reporting import render_report
 
 __all__ = ["COMMANDS", "build_parser", "main", "render_report"]
 
 COMMANDS: dict[str, str] = {
+    "ui": "локальный веб-интерфейс проекта",
     "review": "ревью прогона или сравнение прогонов",
     "metrics": "проектирование и проверка метрик",
     "diagnose": "диагностика данных, сегментов, модели и кривых обучения",
@@ -35,6 +36,7 @@ COMMANDS: dict[str, str] = {
 
 
 HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
+    "ui": ui.run_ui,
     "review": review.run_review,
     "metrics": metrics.run_metrics,
     "diagnose": review.run_diagnose,
@@ -50,6 +52,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], int]] = {
     "mcp": watch.run_mcp,
 }
 ACTIONS: dict[str, Callable[[argparse.ArgumentParser], None]] = {
+    "ui": ui.add_ui_arguments,
     "review": review.add_review_arguments,
     "metrics": metrics.add_metrics_actions,
     "diagnose": review.add_diagnose_actions,
